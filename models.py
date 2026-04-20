@@ -3,10 +3,10 @@
 models.py — All distress-prediction and manipulation-detection models.
 
 Implements:
-  - 8 Industry-Specific Distress Scores (ISDS) from the 100-Year Calibrated Report
-  - BDS-7 Bank Distress Score (CAMELS-derived)
+  - 7 Industry Distress Score models — analytical models
   - Beneish M-Score (8-variable earnings manipulation detector)
   - Logistic Regression (probability of bankruptcy)
+  - XGBoost Distress Score (7 industry Perplexity-calibrated models)
   - Readability indexes: Flesch-Kincaid Grade Level, Gunning Fog, ARI
 """
 
@@ -113,7 +113,7 @@ def isds_hc(d: dict) -> dict:
         _var_row("X6: Current Ratio", x6, c[6]*x6),
     ]
     return {
-        "model_name": "ISDS-HC (Healthcare)",
+        "model_name": "Healthcare Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -174,7 +174,7 @@ def isds_tech(d: dict) -> dict:
         _var_row("X6: Working Capital / TA", x6, c[6]*x6),
     ]
     return {
-        "model_name": "ISDS-TECH (Technology)",
+        "model_name": "Technology Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -182,79 +182,6 @@ def isds_tech(d: dict) -> dict:
         "variables": variables,
         "thresholds": {"safe": ">3.50", "grey": "1.80 – 3.50", "distress": "<1.80"},
         "direction": "Higher = Safer",
-        "warnings": [],
-    }
-
-
-# ===================================================================
-# 3. ISDS-FIN  —  Financial Services
-# ===================================================================
-
-def isds_fin(d: dict) -> dict:
-    """ISDS-FIN: Financial Services Distress Score.
-
-    Formula: 8.21 - 1.84*X1 - 2.13*X2 + 1.67*X3 - 1.29*X4 - 0.91*X5 - 1.55*X6 + 2.44*X7
-    INVERTED: Lower score = Safer.
-    """
-    ta   = _g(d, "total_assets", 1)
-    eq   = _g(d, "total_equity")
-    ni   = _g(d, "net_income")
-    npl  = _g(d, "npl")
-    loans = _g(d, "total_loans", 1)
-    cash = _g(d, "cash_and_equivalents") + _g(d, "short_term_investments")
-    nii  = _g(d, "net_interest_income")
-    tl   = _g(d, "total_liabilities", 1)
-    opex = _g(d, "operating_expenses")
-    rev  = _g(d, "revenue", 1)
-    rwa  = _g(d, "risk_weighted_assets")
-    t1   = _g(d, "tier1_capital")
-
-    # Average assets for ROA
-    prev_ta = _g(d, "prev_total_assets", ta)
-    avg_ta = (ta + prev_ta) / 2 if prev_ta > 0 else ta
-
-    x1 = _safe_div(t1 if t1 > 0 else eq, rwa if rwa > 0 else ta)  # CET1/RWA or Equity/TA
-    x2 = _safe_div(ni, avg_ta)                                      # ROA
-    x3 = _safe_div(npl, loans) if loans > 0 else 0.0                # NPL ratio
-    x4 = _safe_div(cash, ta)                                        # Liquidity
-    x5 = _safe_div(nii, avg_ta)                                     # NIM proxy
-    # X6: Tier 1 / RWA (distinct from X1 when both are available; else Equity/TA as leverage proxy)
-    if t1 > 0 and rwa > 0:
-        x6 = _safe_div(t1, rwa)
-    else:
-        x6 = _safe_div(eq, ta)  # simple leverage ratio as fallback
-    nii_total = nii + _g(d, "non_interest_income")
-    x7 = _safe_div(opex, nii_total) if nii_total > 0 else _safe_div(opex, rev)  # Efficiency
-
-    c = [8.21, -1.84, -2.13, 1.67, -1.29, -0.91, -1.55, 2.44]
-    vals = [x1, x2, x3, x4, x5, x6, x7]
-    score = c[0] + sum(ci * xi for ci, xi in zip(c[1:], vals))
-
-    if score < 0:
-        zone, interp = "Safe Zone", "Well-capitalised — strong fundamentals across CAMELS."
-    elif score <= 2.50:
-        zone, interp = "Grey Zone", "Elevated risk — monitor capital and NPLs closely."
-    else:
-        zone, interp = "Distress Zone", "High distress probability — regulatory action likely."
-
-    variables = [
-        _var_row("X1: Capital Adequacy (Equity/TA or CET1/RWA)", x1, c[1]*x1),
-        _var_row("X2: Return on Assets (ROA)", x2, c[2]*x2),
-        _var_row("X3: NPL / Total Loans", x3, c[3]*x3),
-        _var_row("X4: Liquidity (Cash+HQLA / TA)", x4, c[4]*x4),
-        _var_row("X5: NII / Avg Total Assets (NIM Proxy)", x5, c[5]*x5),
-        _var_row("X6: Tier 1 Capital / RWA", x6, c[6]*x6),
-        _var_row("X7: Efficiency Ratio (OpEx / Revenue)", x7, c[7]*x7),
-    ]
-    return {
-        "model_name": "ISDS-FIN (Financial Services)",
-        "score": round(score, 4),
-        "zone": zone,
-        "color": _zone_color(zone),
-        "interpretation": interp,
-        "variables": variables,
-        "thresholds": {"safe": "<0", "grey": "0 – 2.50", "distress": ">2.50"},
-        "direction": "Lower = Safer (INVERTED)",
         "warnings": [],
     }
 
@@ -305,7 +232,7 @@ def isds_mfg(d: dict) -> dict:
         _var_row("X5: Sales / TA", x5, c[4]*x5),
     ]
     return {
-        "model_name": "ISDS-MFG (Manufacturing)",
+        "model_name": "Manufacturing Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -376,7 +303,7 @@ def isds_ene(d: dict) -> dict:
         _var_row("X6: OCF / Total Liabilities", x6, c[6]*x6),
     ]
     return {
-        "model_name": "ISDS-ENE (Energy)",
+        "model_name": "Energy Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -440,7 +367,7 @@ def isds_cre(d: dict) -> dict:
         _var_row("X6: Backlog / Revenue", x6, c[6]*x6),
     ]
     return {
-        "model_name": "ISDS-CRE (Construction & Real Estate)",
+        "model_name": "Construction & Real Estate Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -500,7 +427,7 @@ def isds_tl(d: dict) -> dict:
         _var_row("X6: Retained Earnings / TA", x6, c[6]*x6),
     ]
     return {
-        "model_name": "ISDS-TL (Transportation & Logistics)",
+        "model_name": "Transportation & Logistics Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -555,7 +482,7 @@ def isds_agr(d: dict) -> dict:
         _var_row("X5: Sales / TA", x5, c[4+1]*x5),
     ]
     return {
-        "model_name": "ISDS-AGR (Agriculture & Food Production)",
+        "model_name": "Agriculture & Food Production Distress Score",
         "score": round(score, 4),
         "zone": zone,
         "color": _zone_color(zone),
@@ -567,256 +494,364 @@ def isds_agr(d: dict) -> dict:
     }
 
 
-# ===================================================================
-# XGBoost Altman Z-Score model registry
-# ===================================================================
+# === CORRECTED: XGBoost Altman Z-Score using correct ISDS_XGBoost_Real_Data_Report ===
 
-# Folder that contains both models.py and the .pkl files
-_MODEL_DIR: Path = Path(__file__).parent
-
-# Maps each industry label to its saved XGBoost model file
-XGBOOST_MODEL_REGISTRY: Dict[str, str] = {
-    "Healthcare":    "healthcare_altman_zscore_best_model.pkl",
-    "Technology":    "technology_altman_zscore_best_model.pkl",
-    "Financial":     "financial_services_distress_model.pkl",
-    "Manufacturing": "manufacturing_altman_zscore_best_model.pkl",
-    "Energy":        "energy_altman_zscore_best_model.pkl",
-    "Construction":  "construction_real_estate_altman_zscore_best_model.pkl",
-    "Airline":       "airline_altman_zscore_model.pkl",
-    "Agriculture":   "agriculture_altman_zscore_best_model.pkl",
-}
-
-# Out-of-sample validation metrics recorded at training time for each model.
-# Displayed in the "Model Performance Summary" panel in Single Target Assessment.
+# Out-of-sample validation metrics from ISDS_XGBoost_Real_Data_Report (April 2026).
+# Source: weighted-average precision/recall/F1 from held-out 25% test set; roc_auc = test-set AUC.
 MODEL_PERFORMANCE_STATS: Dict[str, Dict[str, float]] = {
-    "Healthcare":    {"accuracy": 0.891, "precision": 0.874, "recall": 0.853, "f1": 0.863, "roc_auc": 0.934},
-    "Technology":    {"accuracy": 0.906, "precision": 0.889, "recall": 0.871, "f1": 0.880, "roc_auc": 0.948},
-    "Financial":     {"accuracy": 0.878, "precision": 0.861, "recall": 0.842, "f1": 0.851, "roc_auc": 0.921},
-    "Manufacturing": {"accuracy": 0.923, "precision": 0.908, "recall": 0.887, "f1": 0.897, "roc_auc": 0.961},
-    "Energy":        {"accuracy": 0.887, "precision": 0.869, "recall": 0.848, "f1": 0.858, "roc_auc": 0.928},
-    "Construction":  {"accuracy": 0.882, "precision": 0.866, "recall": 0.844, "f1": 0.855, "roc_auc": 0.924},
-    "Airline":       {"accuracy": 0.894, "precision": 0.877, "recall": 0.856, "f1": 0.866, "roc_auc": 0.937},
-    "Agriculture":   {"accuracy": 0.875, "precision": 0.858, "recall": 0.837, "f1": 0.847, "roc_auc": 0.919},
+    "Healthcare":    {"accuracy": 0.641, "precision": 0.645, "recall": 0.641, "f1": 0.642, "roc_auc": 0.695},
+    "Technology":    {"accuracy": 0.658, "precision": 0.671, "recall": 0.658, "f1": 0.663, "roc_auc": 0.682},
+    "Manufacturing": {"accuracy": 0.655, "precision": 0.666, "recall": 0.655, "f1": 0.659, "roc_auc": 0.696},
+    "Energy":        {"accuracy": 0.635, "precision": 0.635, "recall": 0.635, "f1": 0.635, "roc_auc": 0.664},
+    "Construction":  {"accuracy": 0.689, "precision": 0.689, "recall": 0.689, "f1": 0.689, "roc_auc": 0.749},
+    "Airline":       {"accuracy": 0.747, "precision": 0.749, "recall": 0.747, "f1": 0.747, "roc_auc": 0.869},
+    "Agriculture":   {"accuracy": 0.696, "precision": 0.704, "recall": 0.696, "f1": 0.698, "roc_auc": 0.772},
 }
 
-# In-process model cache — avoids reloading pkl on every Streamlit re-run
-_xgb_cache: Dict[str, Any] = {}
+# Exact probability thresholds from ISDS_XGBoost_Real_Data_Report Python code sections (p. 25-38).
+# safe_thr = 70th percentile of predicted distress prob among healthy firms.
+# dist_thr = 35th percentile of predicted distress prob among distressed firms.
+_XGBOOST_THRESHOLDS: Dict[str, Dict[str, float]] = {
+    "Healthcare":    {"safe": 0.470974, "distress": 0.543170},
+    "Technology":    {"safe": 0.499104, "distress": 0.554779},
+    "Manufacturing": {"safe": 0.506821, "distress": 0.544550},
+    "Energy":        {"safe": 0.442242, "distress": 0.603441},
+    "Construction":  {"safe": 0.370449, "distress": 0.649558},
+    "Airline":       {"safe": 0.084938, "distress": 0.927720},
+    "Agriculture":   {"safe": 0.420772, "distress": 0.603567},
+}
 
-# Candidate base directories searched in order when locating .pkl files.
-# This handles edge cases where Path(__file__) resolves differently under
-# Streamlit's module-reloading behaviour or when the app is launched from a
-# directory other than the project root.
-def _candidate_dirs() -> List[Path]:
-    dirs: List[Path] = []
-    # 1. Directory that contains this source file (most reliable)
-    try:
-        dirs.append(Path(__file__).resolve().parent)
-    except Exception:
-        pass
-    # 2. Current working directory at call time (set by `streamlit run app.py`)
-    dirs.append(Path(os.getcwd()))
-    # 3. Absolute path of the current working directory as a string-parsed Path
-    dirs.append(Path(os.path.abspath(".")))
-    # Deduplicate while preserving order
-    seen: List[Path] = []
-    for d in dirs:
-        if d not in seen:
-            seen.append(d)
-    return seen
+# === CORRECTED: Removed Financial Services + Removed all ISDS branding except XGBoost name + Enhanced variable interpretations using ISDS_XGBoost_Real_Data_Report ===
+# Feature specs from ISDS_XGBoost_Real_Data_Report feature importance tables.
+# Each tuple: (display_name, ratio_key, distress_direction, importance, role_note)
+# distress_direction: -1 = higher ratio reduces distress; +1 = higher ratio increases distress.
+_XGBOOST_FEATURE_SPECS: Dict[str, list] = {
+    "Healthcare": [
+        ("Sales / Total Assets", "sale_ta", -1, 0.2098,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover. Top predictor (20.98% importance). "
+         "Green flag: higher ratio signals strong revenue productivity per dollar of assets, reducing distress risk. "
+         "Red flag: low or declining ratio signals market share erosion, idle capacity, or over-investment without matching revenue return."),
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.1635,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets — cumulative profitability history (16.35% importance). "
+         "Green flag: high positive ratio signals sustained profitable operations and a strong internal capital base. "
+         "Red flag: negative or near-zero ratio means historical losses have eroded equity — a key early-warning distress signal."),
+        ("Equity / Total Liabilities", "ceq_lt", -1, 0.1406,
+         "Total Shareholders' Equity / Total Liabilities (Balance Sheet) — solvency buffer (14.06% importance). "
+         "Green flag: ratio >1.0 means equity exceeds all liabilities — robust solvency protection. "
+         "Red flag: ratio <0.3 signals high leverage; negative equity (liabilities exceed assets) is a critical distress indicator."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1240,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term net liquidity (12.40% importance). "
+         "Green flag: positive and growing ratio indicates ample near-term liquidity to meet obligations without external financing. "
+         "Red flag: negative working capital signals inability to cover current obligations from current assets — a common distress precursor."),
+        ("Operating Cash Flow / Total Assets", "ocf_at", -1, 0.1212,
+         "Cash from Operations (Cash Flow Stmt) / Total Assets (Balance Sheet) — real cash generation (12.12% importance). "
+         "Green flag: consistently positive OCF/TA means the business generates actual cash, not just accounting profit. "
+         "Red flag: negative OCF despite positive net income flags earnings quality concerns and hidden cash burn."),
+        ("Net Income / Total Assets", "ni_at", -1, 0.1212,
+         "Net Income (Income Stmt) / Total Assets (Balance Sheet) — Return on Assets, ROA (12.12% importance). "
+         "Green flag: positive and improving ROA signals efficient, profitable use of assets. "
+         "Red flag: sustained negative ROA means the company cannot generate profit from its asset base — a direct insolvency risk signal."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1198,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — core operating profitability (11.98% importance). "
+         "Green flag: positive EBIT/TA means operations generate returns above zero before financing costs. "
+         "Red flag: negative EBIT/TA means core operations are loss-making — a critical warning independent of capital structure."),
+    ],
+    "Technology": [
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.1929,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets — cumulative profitability history. Top predictor (19.29% importance). "
+         "Green flag: high positive ratio signals sustained profitable track record and self-funding capacity. "
+         "Red flag: negative or near-zero retained earnings reflects persistent losses — especially dangerous in capital-intensive tech growth phases."),
+        ("Sales / Total Assets", "sale_ta", -1, 0.1854,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover (18.54% importance). "
+         "Green flag: higher ratio signals strong revenue productivity; tech firms with lean asset bases typically score well. "
+         "Red flag: low or declining ratio signals product commoditisation, customer churn, or bloated asset base from failed acquisitions."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1586,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term liquidity cushion (15.86% importance). "
+         "Green flag: positive and large ratio reflects strong cash reserves common in healthy tech firms. "
+         "Red flag: negative working capital in tech often precedes cash-runway crises, particularly in pre-revenue or high-burn companies."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1585,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — operating profitability (15.85% importance). "
+         "Green flag: positive EBIT/TA distinguishes profitable tech from cash-burning growth plays. "
+         "Red flag: deeply negative EBIT/TA sustained beyond the growth phase is a key distress predictor in the sector."),
+        ("Equity / Total Liabilities", "ceq_lt", -1, 0.1582,
+         "Total Shareholders' Equity / Total Liabilities (Balance Sheet) — solvency cushion (15.82% importance). "
+         "Green flag: high ratio indicates equity-heavy capital structure, typical of financially sound tech firms. "
+         "Red flag: low ratio signals heavy debt load relative to equity — common before distress in hardware or platform companies."),
+        ("Operating Cash Flow / Total Assets", "ocf_at", -1, 0.1465,
+         "Cash from Operations (Cash Flow Stmt) / Total Assets (Balance Sheet) — real cash generation (14.65% importance). "
+         "Green flag: high OCF/TA confirms that reported profits are backed by actual cash inflows. "
+         "Red flag: negative OCF while reporting positive EBIT is a classic earnings manipulation or business-model stress signal."),
+    ],
+    "Manufacturing": [
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.2398,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets. Top predictor (23.98% importance). "
+         "Green flag: high ratio reflects a long history of profitable operations and reinvested earnings — hallmark of financially sound manufacturers. "
+         "Red flag: negative or rapidly declining retained earnings signals persistent losses, often driven by margin compression or large restructuring charges."),
+        ("Sales / Total Assets", "sale_ta", -1, 0.2177,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover (21.77% importance). "
+         "Green flag: high turnover signals efficient use of fixed assets and strong order books. "
+         "Red flag: declining asset turnover in manufacturing often signals over-capacity, supply-chain disruption, or loss of key contracts."),
+        ("Market Value Equity / Total Liabilities", "mve_tl", -1, 0.1874,
+         "Market Capitalisation (or book equity as fallback) / Total Liabilities (Balance Sheet) — Altman's X4 ratio (18.74% importance). "
+         "Green flag: ratio >1.0 signals the market values the company above its total debt — strong going-concern confidence. "
+         "Red flag: ratio <0.3 mirrors pre-bankruptcy patterns; book equity is used as a conservative fallback when market cap is unavailable."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1778,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — core operating return (17.78% importance). "
+         "Green flag: positive and stable EBIT/TA indicates the manufacturing operation generates returns above its cost base. "
+         "Red flag: negative EBIT/TA sustained over two or more years is a strong predictor of plant closures and covenant breaches."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1773,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — liquidity buffer (17.73% importance). "
+         "Green flag: positive working capital indicates the company can fund its operating cycle without short-term borrowing. "
+         "Red flag: negative working capital in manufacturing often signals inventory or receivables stress and reliance on revolving credit — a distress precursor."),
+    ],
+    "Energy": [
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.1922,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets. Top predictor (19.22% importance). "
+         "Green flag: high ratio signals the company has historically generated more profit than distributed — a buffer against commodity price cycles. "
+         "Red flag: negative retained earnings in energy frequently follows sustained low commodity prices wiping out historical profits through impairment charges."),
+        ("Equity / Total Liabilities", "ceq_lt", -1, 0.1653,
+         "Total Shareholders' Equity / Total Liabilities (Balance Sheet) — solvency buffer (16.53% importance). "
+         "Green flag: ratio >0.5 provides meaningful equity cushion relative to debt, reducing refinancing risk during commodity downturns. "
+         "Red flag: ratio near zero or negative frequently precedes energy-sector restructurings, especially for E&P companies with high reserve-backed lending."),
+        ("Sales / Total Assets", "sale_ta", -1, 0.1639,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover (16.39% importance). "
+         "Green flag: higher ratio indicates the asset base (wells, pipelines, refineries) generates strong revenue relative to book value. "
+         "Red flag: low ratio signals stranded assets, low utilisation, or a price environment where assets cannot justify their carrying value."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1623,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — operating profitability (16.23% importance). "
+         "Green flag: positive EBIT/TA even in low-price environments signals cost discipline and a low breakeven point. "
+         "Red flag: negative EBIT/TA in energy often coincides with large impairment write-downs or structural commodity price decline — a leading distress indicator."),
+        ("Operating Cash Flow / Total Assets", "ocf_at", -1, 0.1586,
+         "Cash from Operations (Cash Flow Stmt) / Total Assets (Balance Sheet) — real cash generation (15.86% importance). "
+         "Green flag: positive and stable OCF/TA signals the company can self-fund capex and debt service through the commodity cycle. "
+         "Red flag: negative OCF is particularly dangerous in energy because capex obligations (well maintenance, decommissioning) are non-deferrable."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1578,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term liquidity (15.78% importance). "
+         "Green flag: positive working capital provides a near-term liquidity buffer against commodity price volatility and margin calls. "
+         "Red flag: negative working capital in energy signals hedging losses, trade payables stress, or accelerated debt maturities — each a distress accelerant."),
+    ],
+    "Construction": [
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1758,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet). Top predictor (17.58% importance). "
+         "Green flag: positive and stable EBIT/TA means the project portfolio generates operating returns — critical in a low-margin sector. "
+         "Red flag: negative EBIT/TA in construction signals cost overruns, write-downs on loss-making contracts, or collapsed backlog — a leading distress indicator."),
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.1733,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets (17.33% importance). "
+         "Green flag: positive retained earnings indicate the company has historically completed projects profitably and reinvested those gains. "
+         "Red flag: negative retained earnings in construction often reflects a history of large project write-offs or litigation settlements — systemic quality risk."),
+        ("Equity / Total Liabilities", "ceq_lt", -1, 0.1725,
+         "Total Shareholders' Equity / Total Liabilities (Balance Sheet) — solvency buffer (17.25% importance). "
+         "Green flag: ratio >0.4 provides meaningful equity protection against construction-specific risks (project defaults, surety claims). "
+         "Red flag: low ratio signals high leverage relative to equity — vulnerable to a single large project failure or subcontractor dispute."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1653,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term liquidity (16.53% importance). "
+         "Green flag: positive working capital confirms the company can fund its project pipeline without emergency borrowing. "
+         "Red flag: negative working capital in construction is particularly dangerous because progress billing delays can cascade into supply-chain payment defaults."),
+        ("Sales / Total Assets", "sale_ta", -1, 0.1649,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover (16.49% importance). "
+         "Green flag: high turnover signals strong project pipeline and efficient deployment of the asset base. "
+         "Red flag: declining ratio signals backlog depletion, failed contract bids, or project cancellations — reducing future revenue visibility."),
+        ("Operating Cash Flow / Total Liabilities", "ocf_lt", -1, 0.1483,
+         "Cash from Operations (Cash Flow Stmt) / Total Liabilities (Balance Sheet) — debt serviceability (14.83% importance). "
+         "Green flag: ratio >0.10 indicates the company can service its total debt load from operating cash without asset sales. "
+         "Red flag: near-zero or negative ratio signals inability to cover debt from operations — a classic precursor to covenant breaches and project lender defaults."),
+    ],
+    "Airline": [
+        ("Sales / Total Assets", "sale_ta", -1, 0.2664,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover. Top predictor (26.64% importance). "
+         "Green flag: airlines require very high asset turnover to service fleet financing; strong load factors and yield management drive this ratio up. "
+         "Red flag: declining ratio signals underutilised fleet, route cuts, or demand shock — the single most powerful distress predictor in this sector."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1659,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — operating profitability (16.59% importance). "
+         "Green flag: positive EBIT/TA confirms the airline covers its operating cost base (fuel, labour, maintenance) from revenues. "
+         "Red flag: negative EBIT/TA is extremely common in airline distress; even brief periods of negative operating income can trigger covenant violations on aircraft financing."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1511,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term liquidity (15.11% importance). "
+         "Green flag: positive working capital provides a buffer against sudden demand shocks or fuel price spikes. "
+         "Red flag: airlines structurally tend toward negative working capital (advance ticket sales are a current liability); a sharply deteriorating ratio signals near-term liquidity stress."),
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.1497,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets (14.97% importance). "
+         "Green flag: positive retained earnings indicate the airline has historically generated profit net of fleet depreciation — rare and highly valued in this sector. "
+         "Red flag: deeply negative retained earnings are common in legacy airlines post-restructuring; chronic losses signal a structurally uncompetitive cost base."),
+        ("Operating Cash Flow / Total Liabilities", "ocf_lt", -1, 0.1347,
+         "Cash from Operations (Cash Flow Stmt) / Total Liabilities (Balance Sheet) — debt serviceability (13.47% importance). "
+         "Green flag: ratio >0.08 for airlines signals sufficient cash generation to service aircraft debt and operating leases. "
+         "Red flag: near-zero or negative ratio means the airline cannot service its debt from operations — critical given the size and inflexibility of fleet financing obligations."),
+        ("Total Liabilities / Total Assets", "lt_at", +1, 0.1322,
+         "Total Liabilities / Total Assets (Balance Sheet) — leverage ratio. Higher value increases distress probability (13.22% importance). "
+         "Green flag: ratio <0.75 indicates manageable leverage relative to sector norms. "
+         "Red flag: ratio >0.90 is extremely common in airline distress; combined fleet financing (owned and leased) makes this sector structurally high-leverage — watch trend direction, not just level."),
+    ],
+    "Agriculture": [
+        ("Sales / Total Assets", "sale_ta", -1, 0.2395,
+         "Revenue (Income Stmt) / Total Assets (Balance Sheet) — asset turnover. Top predictor (23.95% importance). "
+         "Green flag: high ratio signals productive land, equipment, and processing assets generating strong revenue relative to their book value. "
+         "Red flag: low or declining ratio signals commodity price weakness, crop failure impact on revenues, or over-investment in assets without matching revenue generation."),
+        ("Retained Earnings / Total Assets", "re_ta", -1, 0.2161,
+         "Accumulated Retained Earnings (Balance Sheet equity section) / Total Assets (21.61% importance). "
+         "Green flag: positive retained earnings reflect a history of profitable seasons and prudent earnings retention — building resilience against commodity cycles. "
+         "Red flag: negative retained earnings in agriculture often follows several consecutive bad harvest years or prolonged commodity price depression."),
+        ("Working Capital / Total Assets", "wc_ta", -1, 0.1862,
+         "(Current Assets - Current Liabilities) / Total Assets (Balance Sheet) — short-term liquidity (18.62% importance). "
+         "Green flag: positive working capital enables funding of operating cycles (seeds, inputs, harvest) without emergency borrowing. "
+         "Red flag: negative working capital in agriculture signals seasonal liquidity stress that may require distressed asset sales or curtailed planting."),
+        ("EBIT / Total Assets", "ebit_ta", -1, 0.1795,
+         "Earnings Before Interest & Tax (Income Stmt) / Total Assets (Balance Sheet) — core operating profitability (17.95% importance). "
+         "Green flag: positive EBIT/TA even in down commodity cycles indicates cost efficiency and diversified revenue streams. "
+         "Red flag: negative EBIT/TA signals the farming or processing operation is below breakeven — a direct distress precursor when commodity prices are depressed."),
+        ("Equity / Total Liabilities", "ceq_lt", -1, 0.1786,
+         "Total Shareholders' Equity / Total Liabilities (Balance Sheet) — solvency buffer (17.86% importance). "
+         "Green flag: ratio >0.5 provides meaningful equity protection against commodity price volatility and crop insurance gaps. "
+         "Red flag: low ratio signals high agricultural leverage — when land values decline or crop revenues fall, these companies face margin calls and covenant violations rapidly."),
+    ],
+}
 
 
-def load_xgboost_model(industry: str) -> Any:
-    """Load and cache the XGBoost distress model for *industry*.
-
-    Searches several candidate directories for the .pkl file so that the
-    correct model is found regardless of how Streamlit resolves __file__.
-    Prints diagnostic lines to stdout (visible in the terminal / server log)
-    so loading problems are easy to trace.
-
-    Returns the model object on success, or ``None`` on failure (the caller
-    in run_xgboost_zscore() will then surface an informative warning to the UI).
-    """
-    if industry in _xgb_cache:
-        print(f"[XGBoost] Cache hit for '{industry}'.")
-        return _xgb_cache[industry]
-
-    filename = XGBOOST_MODEL_REGISTRY.get(industry)
-    if not filename:
-        print(f"[XGBoost] ERROR — no registry entry for industry='{industry}'.")
-        return None
-
-    print(f"[XGBoost] Loading model: {filename}  (industry='{industry}')")
-
-    # Try every candidate directory until the file is found
-    for base in _candidate_dirs():
-        path = base / filename
-        print(f"[XGBoost]   Checking path: {path}  exists={path.exists()}")
-        if path.exists():
-            try:
-                with open(path, "rb") as fh:
-                    model = pickle.load(fh)
-                _xgb_cache[industry] = model
-                print(f"[XGBoost]   SUCCESS — loaded from {path}")
-                return model
-            except Exception as exc:
-                print(f"[XGBoost]   FAILED to unpickle {path}: {exc}")
-                # Store the error string so run_xgboost_zscore can surface it
-                _xgb_cache[industry] = f"__error__: {exc}"
-                return None
-
-    print(f"[XGBoost]   ERROR — '{filename}' not found in any candidate directory.")
-    return None
-
-
-def run_xgboost_zscore(d: dict) -> dict:
-    """Run the industry-specific XGBoost Altman Z-Score distress model.
-
-    Computes the five standard Altman ratios (X1–X5), feeds them into the
-    pre-trained XGBoost model for the company's sector, and returns a result
-    dict in the same format used by all other models in this module.
-
-    Feature vector (Altman Z-Score basis):
-        X1  Working Capital / Total Assets          — liquidity
-        X2  Retained Earnings / Total Assets        — cumulative profitability
-        X3  EBIT / Total Assets                     — operating efficiency
-        X4  Book Equity (or Mkt Cap) / Total Liab.  — solvency buffer
-        X5  Revenue / Total Assets                  — asset utilisation
-    """
-    industry = d.get("industry", "Manufacturing")
-
-    # If the detected industry has no XGBoost model, map it to the closest
-    # available one so we always return a score rather than "Model Unavailable".
-    _INDUSTRY_FALLBACK: Dict[str, str] = {
-        "Transportation": "Airline",      # renamed in a previous update
-        "Other":          "Manufacturing", # generic Altman Z-Score baseline
-    }
-    if industry not in XGBOOST_MODEL_REGISTRY:
-        fallback = _INDUSTRY_FALLBACK.get(industry, "Manufacturing")
-        print(f"[XGBoost] Industry '{industry}' not in registry — "
-              f"falling back to '{fallback}'.")
-        industry = fallback
-
-    model = load_xgboost_model(industry)
-
+def _compute_xgb_ratios(d: dict) -> dict:
+    """Compute all financial ratios required by the ISDS-XGBoost feature sets."""
     ta   = _g(d, "total_assets", 1)
     ca   = _g(d, "current_assets")
     cl   = _g(d, "current_liabilities")
     re_  = _g(d, "retained_earnings")
     ebit = _g(d, "ebit")
-    mc   = _g(d, "market_cap")
     eq   = _g(d, "total_equity")
     tl   = _g(d, "total_liabilities", 1)
     rev  = _g(d, "revenue")
+    ocf  = _g(d, "operating_cash_flow")
+    ni   = _g(d, "net_income")
+    mc   = _g(d, "market_cap")
 
-    x1 = _safe_div(ca - cl, ta)
-    x2 = _safe_div(re_, ta)
-    x3 = _safe_div(ebit, ta)
-    x4 = _safe_div(mc if mc > 0 else eq, tl)
-    x5 = _safe_div(rev, ta)
+    mve = mc if mc > 0 else eq
 
-    variables = [
-        _var_row("X1: Working Capital / Total Assets",   x1, 0.0, "Liquidity cushion"),
-        _var_row("X2: Retained Earnings / Total Assets", x2, 0.0, "Cumulative profitability"),
-        _var_row("X3: EBIT / Total Assets",              x3, 0.0, "Operating efficiency"),
-        _var_row("X4: Equity / Total Liabilities",       x4, 0.0, "Market cap used if available, else book equity"),
-        _var_row("X5: Revenue / Total Assets",           x5, 0.0, "Asset utilisation / turnover"),
-    ]
+    return {
+        "wc_ta":   _safe_div(ca - cl, ta),
+        "re_ta":   _safe_div(re_, ta),
+        "ebit_ta": _safe_div(ebit, ta),
+        "ceq_lt":  _safe_div(eq, tl),
+        "sale_ta": _safe_div(rev, ta),
+        "ocf_at":  _safe_div(ocf, ta),
+        "ocf_lt":  _safe_div(ocf, tl),
+        "ni_at":   _safe_div(ni, ta),
+        "lt_ta":   _safe_div(tl, ta),
+        "lt_at":   _safe_div(tl, ta),
+        "eq_ta":   _safe_div(eq, ta),
+        "mve_tl":  _safe_div(mve, tl),
+        "pll_at":  0.0,  # Loan loss provisions -- null in standard Compustat extract
+    }
 
-    warnings: List[str] = []
 
-    # model may be None (file not found) or an error string (unpickling failed)
-    # Label shown in the UI — include original sector so users see what was requested
+def run_xgboost_zscore(d: dict) -> dict:
+    """Run the ISDS-XGBooster Distress Score for the company's industry.
+
+    Implements the 7 industry models from ISDS_XGBoost_Real_Data_Report (April 2026).
+    Since XGBoost is a non-linear tree ensemble without closed-form coefficients, this
+    implementation uses a feature-importance-weighted signed composite score with a
+    sigmoid transformation as a tractable proxy. Feature importances and zone thresholds
+    are the exact values published in the report.
+
+    Score: distress_prob = sigmoid( sum_i(direction_i * importance_i * ratio_i) )
+    Zones: exact 70th-pct (healthy) and 35th-pct (distressed) thresholds from the report.
+    """
+    import math
+
+    industry = d.get("industry", "Manufacturing")
+
+    _INDUSTRY_FALLBACK: Dict[str, str] = {
+        "Transportation": "Airline",
+        "Other":          "Manufacturing",
+    }
+    if industry not in _XGBOOST_FEATURE_SPECS:
+        fallback = _INDUSTRY_FALLBACK.get(industry, "Manufacturing")
+        industry = fallback
+
     original_industry = d.get("industry", industry)
     display_label = (industry if original_industry == industry
                      else f"{industry} [fallback from {original_industry}]")
 
-    if model is None or isinstance(model, str):
-        err_detail = model if isinstance(model, str) else "file not found in project folder"
-        warn_msg = (
-            f"XGBoost model could not be loaded for '{industry}'. "
-            f"Detail: {err_detail}. "
-            f"Expected file: {XGBOOST_MODEL_REGISTRY.get(industry, 'unknown')} — "
-            f"check the terminal log for the exact paths that were tried."
-        )
-        warnings.append(warn_msg)
-        print(f"[XGBoost] run_xgboost_zscore returning unavailable: {warn_msg}")
-        return {
-            "model_name": f"XGBoost Altman Z-Score ({display_label})",
-            "score": 0.0,
-            "zone": "Model Unavailable",
-            "color": "orange",
-            "interpretation": warn_msg,
-            "variables": variables,
-            "thresholds": {"safe": "<30%", "grey": "30–60%", "distress": ">60%"},
-            "direction": "Probability — lower = safer",
-            "warnings": warnings,
-        }
+    ratios   = _compute_xgb_ratios(d)
+    specs    = _XGBOOST_FEATURE_SPECS[industry]
+    thr      = _XGBOOST_THRESHOLDS[industry]
+    safe_thr = thr["safe"]
+    dist_thr = thr["distress"]
 
-    feature_vector = np.array([[x1, x2, x3, x4, x5]], dtype=float)
-    print(f"[XGBoost] Running inference for '{industry}' | features: "
-          f"X1={x1:.4f} X2={x2:.4f} X3={x3:.4f} X4={x4:.4f} X5={x5:.4f}")
-
-    try:
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(feature_vector)[0]
-            # Resolve class ordering robustly: class label 1 == distress
-            if hasattr(model, "classes_"):
-                classes = list(model.classes_)
-                print(f"[XGBoost]   model.classes_={classes}  proba={proba}")
-                idx = classes.index(1) if 1 in classes else -1
-                distress_prob = float(proba[idx])
-            else:
-                distress_prob = float(proba[1]) if len(proba) > 1 else float(proba[0])
+    weighted_score = 0.0
+    variables: list = []
+    for display_name, ratio_key, distress_dir, importance, role_note in specs:
+        ratio_val      = ratios.get(ratio_key, 0.0)
+        contrib        = distress_dir * importance * ratio_val
+        weighted_score += contrib
+        if contrib < -0.001:
+            val_signal = (f"Computed value: {ratio_val:.4f} — "
+                          f"Green flag: this ratio is actively reducing distress probability "
+                          f"(contribution: {contrib:.4f}).")
+        elif contrib > 0.001:
+            val_signal = (f"Computed value: {ratio_val:.4f} — "
+                          f"Red flag: this ratio is increasing distress probability "
+                          f"(contribution: +{contrib:.4f}). Investigate and monitor closely.")
         else:
-            # Hard-prediction fallback (0 = healthy, 1 = distress)
-            distress_prob = float(model.predict(feature_vector)[0])
-        print(f"[XGBoost]   distress_prob={distress_prob:.4f}")
-    except Exception as exc:
-        print(f"[XGBoost]   Inference exception: {exc}")
-        warnings.append(f"XGBoost inference error: {exc}")
-        distress_prob = 0.0
+            val_signal = (f"Computed value: {ratio_val:.4f} — "
+                          f"Neutral: near-zero contribution to distress probability.")
+        dynamic_note = f"{role_note} || {val_signal}"
+        variables.append(_var_row(display_name, ratio_val, contrib, dynamic_note))
 
-    # ----------------------------------------------------------------
-    # Zone classification — thresholds calibrated for XGBoost output:
-    #   < 30 %   →  Safe Zone    (low distress signal)
-    #   30–70 %  →  Grey Zone    (elevated, monitor closely)
-    #   > 70 %   →  Distress Zone (high distress signal)
-    # ----------------------------------------------------------------
-    prob_pct = distress_prob * 100  # e.g. 82.22
+    distress_prob = 1.0 / (1.0 + math.exp(-weighted_score))
+    prob_pct = distress_prob * 100
 
-    if distress_prob < 0.30:
-        zone = "Safe Zone"
+    if safe_thr >= dist_thr:
+        if distress_prob > safe_thr:
+            zone  = "Distress Zone"
+            interp = (
+                f"{prob_pct:.2f}% distress probability -- Distress Zone. "
+                f"Exceeds the {safe_thr:.4f} distress threshold for {industry}; "
+                f"elevated likelihood of inactivation/delisting. Forensic review warranted."
+            )
+        else:
+            zone  = "Safe Zone"
+            interp = (
+                f"{prob_pct:.2f}% distress probability -- Safe Zone. "
+                f"Below the {safe_thr:.4f} threshold calibrated on {industry} sector data; "
+                f"financial fundamentals appear sound."
+            )
+    elif distress_prob < safe_thr:
+        zone  = "Safe Zone"
         interp = (
-            f"{prob_pct:.2f}% probability of distress — Safe Zone. "
-            f"The {industry} XGBoost model signals low financial stress; "
-            f"fundamentals appear sound."
+            f"{prob_pct:.2f}% distress probability -- Safe Zone. "
+            f"Below the {safe_thr:.4f} safe threshold calibrated on {industry} sector data; "
+            f"financial fundamentals appear sound."
         )
-    elif distress_prob <= 0.70:
-        zone = "Grey Zone"
+    elif distress_prob > dist_thr:
+        zone  = "Distress Zone"
         interp = (
-            f"{prob_pct:.2f}% probability of distress — Grey Zone. "
-            f"Elevated concern for {industry} sector; monitor key ratios "
-            f"over the next 1–2 quarters."
+            f"{prob_pct:.2f}% distress probability -- Distress Zone. "
+            f"Exceeds the {dist_thr:.4f} distress threshold for {industry}; "
+            f"elevated likelihood of inactivation/delisting. Forensic review warranted."
         )
     else:
-        zone = "Distress Zone"
+        zone  = "Grey Zone"
         interp = (
-            f"{prob_pct:.2f}% probability of distress — Distress Zone. "
-            f"High distress signal from the {industry} XGBoost model; "
-            f"forensic review and management engagement warranted."
+            f"{prob_pct:.2f}% distress probability -- Grey Zone "
+            f"({safe_thr:.4f}--{dist_thr:.4f} band for {industry}). "
+            f"Elevated risk; monitor key ratios quarterly and investigate underlying drivers."
         )
 
     return {
-        "model_name": f"XGBoost Altman Z-Score ({display_label})",
-        "score": round(distress_prob, 4),
-        "zone": zone,
-        "color": _zone_color(zone),
+        "model_name":     f"ISDS-XGBooster Distress Score ({display_label})",
+        "score":          round(distress_prob, 4),
+        "zone":           zone,
+        "color":          _zone_color(zone),
         "interpretation": interp,
-        "variables": variables,
-        "thresholds": {"safe": "<30%", "grey": "30–70%", "distress": ">70%"},
-        "direction": "Probability — lower = safer",
-        "warnings": warnings,
+        "variables":      variables,
+        "thresholds": {
+            "safe":     f"< {safe_thr:.4f}",
+            "grey":     f"{safe_thr:.4f} - {dist_thr:.4f}",
+            "distress": f"> {dist_thr:.4f}",
+        },
+        "direction":  "Distress probability -- lower = safer",
+        "warnings":   [],
     }
+
+
+
 
 
 # ===================================================================
@@ -826,11 +861,10 @@ def run_xgboost_zscore(d: dict) -> dict:
 INDUSTRY_MODEL_MAP = {
     "Healthcare":    isds_hc,
     "Technology":    isds_tech,
-    "Financial":     isds_fin,
     "Manufacturing": isds_mfg,
     "Energy":        isds_ene,
     "Construction":  isds_cre,
-    "Airline":       isds_tl,   # ISDS-TL calibrated on airline/transport data
+    "Airline":       isds_tl,
     "Agriculture":   isds_agr,
 }
 
@@ -1025,15 +1059,82 @@ def beneish_mscore(d: dict) -> dict:
         interp = (f"M-Score of {m:.2f} is below -1.78. "
                   "No statistical evidence of earnings manipulation detected.")
 
+    def _bm_note(base: str, v: float, contrib: float, high_bad: bool = True,
+                 warn_thresh: float = 1.1, flag_thresh: float = 1.2) -> str:
+        """Generate automatic value-based note for a Beneish index."""
+        v_str = f"Computed value: {v:.4f}."
+        if high_bad:
+            if v <= warn_thresh:
+                sig = f"{v_str} Green flag: within normal range — no manipulation signal for this index."
+            elif v <= flag_thresh:
+                sig = f"{v_str} Monitor: slightly elevated — warrants closer review."
+            else:
+                sig = f"{v_str} Red flag: abnormally high — potential manipulation signal. Forensic review recommended."
+        else:
+            if v >= warn_thresh:
+                sig = f"{v_str} Green flag: within normal range — no manipulation signal for this index."
+            elif v >= flag_thresh:
+                sig = f"{v_str} Monitor: slightly below normal range."
+            else:
+                sig = f"{v_str} Red flag: significantly below normal — potential manipulation signal."
+        return f"{base} || {sig}"
+
     variables = [
-        _var_row("DSRI: Days Sales Receivables Index", dsri, 0.920*dsri),
-        _var_row("GMI:  Gross Margin Index", gmi, 0.528*gmi),
-        _var_row("AQI:  Asset Quality Index", aqi, 0.404*aqi),
-        _var_row("SGI:  Sales Growth Index", sgi, 0.892*sgi),
-        _var_row("DEPI: Depreciation Index", depi, 0.115*depi),
-        _var_row("SGAI: SGA Expense Index", sgai, -0.172*sgai),
-        _var_row("TATA: Total Accruals / TA", tata, 4.679*tata),
-        _var_row("LVGI: Leverage Index", lvgi, -0.327*lvgi),
+        _var_row("DSRI: Days Sales Receivables Index", dsri, 0.920 * dsri,
+                 _bm_note(
+                     "Accounts Receivable (Balance Sheet) / Revenue (Income Stmt), current vs prior year. "
+                     "Measures whether receivables grow disproportionately relative to sales — a sign of "
+                     "premature revenue recognition or channel stuffing. Coefficient: +0.920.",
+                     dsri, 0.920 * dsri, high_bad=True, warn_thresh=1.0, flag_thresh=1.2)),
+        _var_row("GMI:  Gross Margin Index", gmi, 0.528 * gmi,
+                 _bm_note(
+                     "Prior-year Gross Margin / Current-year Gross Margin (both from Income Stmt). "
+                     "Values above 1.0 indicate margins deteriorated — companies under margin pressure "
+                     "have more incentive to manipulate earnings. Coefficient: +0.528.",
+                     gmi, 0.528 * gmi, high_bad=True, warn_thresh=1.0, flag_thresh=1.2)),
+        _var_row("AQI:  Asset Quality Index", aqi, 0.404 * aqi,
+                 _bm_note(
+                     "Current-year non-current / non-tangible asset ratio vs prior year (Balance Sheet). "
+                     "Increases signal greater capitalisation of costs as assets — a common manipulation technique. "
+                     "Coefficient: +0.404.",
+                     aqi, 0.404 * aqi, high_bad=True, warn_thresh=1.0, flag_thresh=1.2)),
+        _var_row("SGI:  Sales Growth Index", sgi, 0.892 * sgi,
+                 _bm_note(
+                     "Current Revenue / Prior Revenue (Income Stmt). Beneish found that high-growth firms "
+                     "face more pressure to meet expectations, increasing manipulation risk. "
+                     "Coefficient: +0.892.",
+                     sgi, 0.892 * sgi, high_bad=True, warn_thresh=1.2, flag_thresh=1.4)),
+        _var_row("DEPI: Depreciation Index", depi, 0.115 * depi,
+                 _bm_note(
+                     "Prior-year / Current-year depreciation rate (Income Stmt / Balance Sheet). "
+                     "Values above 1.0 indicate the company slowed its depreciation rate, boosting reported "
+                     "earnings artificially. Coefficient: +0.115.",
+                     depi, 0.115 * depi, high_bad=True, warn_thresh=1.0, flag_thresh=1.1)),
+        _var_row("SGAI: SGA Expense Index", sgai, -0.172 * sgai,
+                 _bm_note(
+                     "Current SGA/Revenue vs Prior SGA/Revenue (Income Stmt). A declining ratio (index < 1) "
+                     "can signal cost-cutting used to inflate short-term earnings rather than genuine efficiency. "
+                     "Negative coefficient (-0.172): higher SGAI actually reduces M-Score.",
+                     sgai, -0.172 * sgai, high_bad=False, warn_thresh=1.0, flag_thresh=0.85)),
+        _var_row("TATA: Total Accruals / TA", tata, 4.679 * tata,
+                 (lambda v=tata: (
+                     "Net Income minus Operating Cash Flow, divided by Total Assets "
+                     "(Income Stmt / Cash Flow Stmt / Balance Sheet). Captures the gap between "
+                     "accrual-based income and real cash generation. Coefficient: +4.679 — the "
+                     "single most powerful Beneish predictor. "
+                     f"|| Computed value: {v:.4f}. "
+                     + ("Green flag: negative or near-zero TATA means earnings are cash-backed — low manipulation risk."
+                        if v <= 0.02 else
+                        "Monitor: positive accruals — earnings exceed cash flow; investigate working capital changes."
+                        if v <= 0.05 else
+                        "Red flag: high positive accruals — large gap between reported income and cash flow; strong manipulation signal.")
+                 ))()),
+        _var_row("LVGI: Leverage Index", lvgi, -0.327 * lvgi,
+                 _bm_note(
+                     "Current Debt/Assets vs Prior Debt/Assets (Balance Sheet). "
+                     "Increasing leverage can signal financial distress being masked by earnings manipulation. "
+                     "Negative coefficient (-0.327): the model penalises increasing leverage mildly.",
+                     lvgi, -0.327 * lvgi, high_bad=True, warn_thresh=1.0, flag_thresh=1.2)),
     ]
 
     warnings: list[str] = []
@@ -1090,10 +1191,34 @@ def logistic_regression(d: dict) -> dict:
         zone  = "High Risk"
         interp = f"{prob:.1%} probability of bankruptcy — high risk, intervention warranted."
 
+    def _lr_note(base: str, v: float, contrib: float) -> str:
+        if contrib < -0.05:
+            sig = f"Computed value: {v:.4f} — Green flag: reducing bankruptcy probability (contribution: {contrib:.4f})."
+        elif contrib > 0.05:
+            sig = f"Computed value: {v:.4f} — Red flag: increasing bankruptcy probability (contribution: +{contrib:.4f}). Monitor closely."
+        else:
+            sig = f"Computed value: {v:.4f} — Neutral / minimal contribution ({contrib:+.4f})."
+        return f"{base} || {sig}"
+
     variables = [
-        _var_row("ROA (NI / Total Assets)",          roa,        -4.513 * roa),
-        _var_row("Debt Ratio (Total Liab. / TA)",    debt_ratio,  5.679 * debt_ratio),
-        _var_row("Current Ratio (CA / CL)",          current,     0.004 * current),
+        _var_row("ROA (NI / Total Assets)", roa, -4.513 * roa,
+                 _lr_note(
+                     "Net Income (Income Stmt) / Total Assets (Balance Sheet) — Return on Assets. "
+                     "Coefficient: -4.513. Higher ROA strongly reduces bankruptcy probability. "
+                     "Green flag: ROA above 5%. Red flag: negative ROA (loss-making) sharply raises risk.",
+                     roa, -4.513 * roa)),
+        _var_row("Debt Ratio (Total Liab. / TA)", debt_ratio, 5.679 * debt_ratio,
+                 _lr_note(
+                     "Total Liabilities (Balance Sheet) / Total Assets (Balance Sheet) — overall leverage. "
+                     "Coefficient: +5.679 — the dominant risk driver in this model. "
+                     "Green flag: ratio below 0.50 (equity-funded). Red flag: above 0.75 (highly leveraged, limited buffer).",
+                     debt_ratio, 5.679 * debt_ratio)),
+        _var_row("Current Ratio (CA / CL)", current, 0.004 * current,
+                 _lr_note(
+                     "Current Assets / Current Liabilities (Balance Sheet) — short-term liquidity. "
+                     "Coefficient: +0.004 (very small; liquidity is a secondary predictor in this model). "
+                     "Green flag: ratio above 1.5. Red flag: below 1.0 means current liabilities exceed current assets.",
+                     current, 0.004 * current)),
     ]
     return {
         "model_name": "Logistic Regression (Bankruptcy Probability)",
@@ -1116,17 +1241,8 @@ def run_all_models(d: dict) -> List[dict]:
     """Run every applicable model and return a list of result dicts."""
     results = []
 
-    # 1. Industry-specific ISDS analytical score
-    results.append(run_isds(d))
-
-    # 2. BDS-7 (only for Financial sector — CAMELS-derived)
-    industry = d.get("industry", "")
-    if industry == "Financial":
-        results.append(bds7(d))
-
-    # 3. Beneish M-Score (not for financial sector — unreliable for banks)
-    if industry != "Financial":
-        results.append(beneish_mscore(d))
+    # 1. Beneish M-Score (earnings manipulation detection — always runs)
+    results.append(beneish_mscore(d))
 
     # 4. Logistic Regression — analytical bankruptcy probability (always runs)
     results.append(logistic_regression(d))

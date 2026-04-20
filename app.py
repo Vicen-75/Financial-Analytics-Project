@@ -14,7 +14,7 @@ import plotly.express as px
 import math
 
 from data_fetcher import fetch_yfinance, manual_entry_template, parse_csv, _map_sector
-from models import (run_all_models, run_isds, bds7, beneish_mscore,
+from models import (run_all_models, run_isds, beneish_mscore,
                     logistic_regression, run_xgboost_zscore,
                     MODEL_PERFORMANCE_STATS, synergy_scorecard,
                     INDUSTRY_CHOICES, INDUSTRY_MODEL_MAP,
@@ -92,12 +92,41 @@ def render_score_card(result: dict):
         thr = result.get("thresholds", {})
         if thr:
             st.markdown("**Thresholds:** " + " | ".join(f"{k}: {v}" for k, v in thr.items()))
-        # Table
+        # Table — rendered as HTML so the Note column wraps fully and is never truncated
         vars_ = result.get("variables", [])
         if vars_:
             df = pd.DataFrame(vars_)
             df.columns = ["Variable", "Value", "Contribution", "Note"]
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            _hdr = (
+                "<tr>"
+                "<th style='padding:6px 10px;border-bottom:2px solid #475569;color:#94a3b8;"
+                "font-size:0.78rem;text-transform:uppercase'>Variable</th>"
+                "<th style='padding:6px 10px;border-bottom:2px solid #475569;color:#94a3b8;"
+                "font-size:0.78rem;text-transform:uppercase'>Value</th>"
+                "<th style='padding:6px 10px;border-bottom:2px solid #475569;color:#94a3b8;"
+                "font-size:0.78rem;text-transform:uppercase'>Contribution</th>"
+                "<th style='padding:6px 10px;border-bottom:2px solid #475569;color:#94a3b8;"
+                "font-size:0.78rem;text-transform:uppercase'>Note</th>"
+                "</tr>"
+            )
+            _rows = "".join(
+                f"<tr>"
+                f"<td style='font-weight:600;white-space:nowrap;padding:6px 10px;"
+                f"border-bottom:1px solid #334155;vertical-align:top'>{row['Variable']}</td>"
+                f"<td style='font-family:monospace;white-space:nowrap;padding:6px 10px;"
+                f"border-bottom:1px solid #334155;vertical-align:top'>{float(row['Value']):.6f}</td>"
+                f"<td style='font-family:monospace;white-space:nowrap;padding:6px 10px;"
+                f"border-bottom:1px solid #334155;vertical-align:top'>{float(row['Contribution']):.4f}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #334155;"
+                f"vertical-align:top;line-height:1.55;font-size:0.84rem'>{row['Note']}</td>"
+                f"</tr>"
+                for _, row in df.iterrows()
+            )
+            st.markdown(
+                f"<table style='width:100%;border-collapse:collapse;font-size:0.9rem'>"
+                f"<thead>{_hdr}</thead><tbody>{_rows}</tbody></table>",
+                unsafe_allow_html=True,
+            )
 
         # Contribution bar chart
         if vars_:
@@ -120,7 +149,8 @@ def render_score_card(result: dict):
 # Helper: render gauge chart for overall risk
 # ---------------------------------------------------------------------------
 
-def render_risk_gauge(results: list[dict]):
+# === FIXED: Added unique keys to plotly_chart to fix StreamlitDuplicateElementId in merger analysis ===
+def render_risk_gauge(results: list[dict], key: str = "risk_gauge"):
     """Create a composite risk gauge from all model results."""
     risk_scores = []
     for r in results:
@@ -150,7 +180,7 @@ def render_risk_gauge(results: list[dict]):
         },
     ))
     fig.update_layout(height=280, margin=dict(t=50, b=10, l=30, r=30), template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=key)
 
 
 # ---------------------------------------------------------------------------
@@ -191,20 +221,6 @@ def data_input_panel(key_prefix: str = "") -> dict | list[dict] | None:
                                     INDUSTRY_CHOICES, index=current_idx,
                                     key=f"{key_prefix}_industry")
             data["industry"] = industry
-
-            # Bank-specific overrides for Financial sector
-            if industry == "Financial":
-                with st.expander("Bank-Specific Inputs (optional)", expanded=False):
-                    data["npl"] = st.number_input("Non-Performing Loans ($)", value=float(data.get("npl", 0)),
-                                                  key=f"{key_prefix}_npl")
-                    data["total_loans"] = st.number_input("Total Loans ($)", value=float(data.get("total_loans", 0)),
-                                                          key=f"{key_prefix}_loans")
-                    data["tier1_capital"] = st.number_input("Tier 1 Capital ($)", value=0.0,
-                                                            key=f"{key_prefix}_t1")
-                    data["risk_weighted_assets"] = st.number_input("Risk-Weighted Assets ($)", value=0.0,
-                                                                    key=f"{key_prefix}_rwa")
-                    data["non_interest_income"] = st.number_input("Non-Interest Income ($)", value=0.0,
-                                                                   key=f"{key_prefix}_nii_other")
 
             # Energy-specific overrides
             if industry == "Energy":
@@ -442,7 +458,7 @@ def main():
     # --- Sidebar ---
     with st.sidebar:
         st.title("M&A Risk Analyzer")
-        st.caption("Industry-Specific Distress Scores | BDS-7 | Beneish | XGBoost Altman Z-Score")
+        st.caption("Distress Scores | Beneish | ISDS-XGBooster")
         st.markdown("---")
         mode = st.radio("Analysis Mode",
                         ["Single Target Assessment", "Merger Analysis",
@@ -451,10 +467,9 @@ def main():
         st.markdown("---")
         st.markdown("""
         **Models Included:**
-        - 8 ISDS Models (100-yr calibrated)
-        - BDS-7 Bank Distress (CAMELS)
+        - 7 Industry Distress Score Models (analytical)
         - Beneish M-Score (Manipulation)
-        - XGBoost Altman Z-Score (8 industry models)
+        - ISDS-XGBooster Distress Score (7 industry models)
         - CAPM Valuation
         - Textual Sentiment (L&M + DistilBERT)
         """)
@@ -463,7 +478,7 @@ def main():
 
     # --- Header ---
     st.markdown("# M&A Risk & Synergy Analyzer")
-    st.markdown("*Industry-calibrated distress scoring across 8 sectors with 100+ year backtesting*")
+    st.markdown("*Industry-calibrated distress scoring across 7 sectors with 100+ year backtesting*")
     st.markdown("---")
 
     # ================================================================
@@ -686,14 +701,14 @@ def main():
                 with col_a:
                     name_a = data_a.get("company_name") or data_a.get("ticker", "Acquirer")
                     st.markdown(f"#### {name_a} (Acquirer)")
-                    render_risk_gauge(sc["acquirer_scores"])
+                    render_risk_gauge(sc["acquirer_scores"], key="acquirer_risk_gauge")
                     for r in sc["acquirer_scores"]:
                         render_score_card(r)
 
                 with col_t:
                     name_t = data_t.get("company_name") or data_t.get("ticker", "Target")
                     st.markdown(f"#### {name_t} (Target)")
-                    render_risk_gauge(sc["target_scores"])
+                    render_risk_gauge(sc["target_scores"], key="target_risk_gauge")
                     for r in sc["target_scores"]:
                         render_score_card(r)
 
@@ -760,7 +775,7 @@ def main():
                     # where 0 = perfectly healthy.  Invert so radar "higher = safer".
                     if direction.startswith("Probability"):
                         return max(0.0, min(1.0 - s, 1.0))
-                    # INVERTED analytical models (BDS-7, ISDS-FIN): lower raw score = safer
+                    # INVERTED analytical models (ISDS-FIN): lower raw score = safer
                     if "lower" in direction.lower() or "inverted" in direction.lower():
                         # Negate then rescale to positive range assuming scores sit in [-5, 5]
                         return max(0.0, min((5.0 + (-s)) / 10.0, 1.0))
