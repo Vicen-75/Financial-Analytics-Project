@@ -632,7 +632,7 @@ def main():
     # ================================================================
     # MERGER ANALYSIS MODE
     # ================================================================
-    elif mode == "Merger Analysis":
+elif mode == "Merger Analysis":
         st.markdown("## Merger / Acquisition Analysis")
         st.markdown("Input data for both the **Acquirer** and the **Target** to generate "
                     "individual risk scores and a combined synergy scorecard.")
@@ -642,18 +642,37 @@ def main():
         with tab_a:
             st.markdown("### Acquirer Company")
             data_a = data_input_panel(key_prefix="acq")
+            if data_a is not None:
+                if isinstance(data_a, list):
+                    data_a = data_a[0]
+                st.session_state["merger_data_a"] = data_a
 
         with tab_t:
             st.markdown("### Target Company")
             data_t = data_input_panel(key_prefix="tgt")
+            if data_t is not None:
+                if isinstance(data_t, list):
+                    data_t = data_t[0]
+                st.session_state["merger_data_t"] = data_t
+
+        # Recuperar de session_state si el usuario cambió de pestaña
+        data_a = st.session_state.get("merger_data_a")
+        data_t = st.session_state.get("merger_data_t")
+
+        # Indicadores de estado
+        col_status_a, col_status_t = st.columns(2)
+        with col_status_a:
+            if data_a:
+                st.success(f"✅ Acquirer loaded: {data_a.get('company_name') or data_a.get('ticker', 'Unknown')}")
+            else:
+                st.warning("⏳ Acquirer: no data yet — fetch or enter data in the Acquirer tab.")
+        with col_status_t:
+            if data_t:
+                st.success(f"✅ Target loaded: {data_t.get('company_name') or data_t.get('ticker', 'Unknown')}")
+            else:
+                st.warning("⏳ Target: no data yet — fetch or enter data in the Target tab.")
 
         if data_a and data_t:
-            # Ensure we have single dicts (not lists)
-            if isinstance(data_a, list):
-                data_a = data_a[0]
-            if isinstance(data_t, list):
-                data_t = data_t[0]
-
             if st.button("Run Merger Analysis", type="primary", key="run_merger"):
                 st.markdown("---")
                 st.markdown("## Merger Analysis Results")
