@@ -632,7 +632,7 @@ def main():
     # ================================================================
     # MERGER ANALYSIS MODE
     # ================================================================
-elif mode == "Merger Analysis":
+    elif mode == "Merger Analysis":
         st.markdown("## Merger / Acquisition Analysis")
         st.markdown("Input data for both the **Acquirer** and the **Target** to generate "
                     "individual risk scores and a combined synergy scorecard.")
