@@ -732,6 +732,92 @@ def main():
                 styled_syn = syn_df.style.map(_color_syn, subset=["Synergy Level"])
                 st.dataframe(styled_syn, use_container_width=True, hide_index=True)
 
+                # --- Key Financial Ratios Comparison Table ---
+                st.markdown("### Key Financial Ratios Comparison")
+                st.caption("Side-by-side comparison of the most relevant M&A screening ratios. "
+                           "Gap = Acquirer minus Target. Signal indicates strategic fit.")
+
+                def _safe_ratio(num, den):
+                    try:
+                        return num / den if den and den != 0 else None
+                    except Exception:
+                        return None
+
+                def _fmt_ratio(val, pct=False):
+                    if val is None:
+                        return "N/A"
+                    if pct:
+                        return f"{val:.1%}"
+                    return f"{val:.2f}x"
+
+                def _signal(gap, higher_better=True):
+                    if gap is None:
+                        return "—"
+                    if higher_better:
+                        return "✅ Acquirer stronger" if gap > 0.05 else ("⚠️ Target stronger" if gap < -0.05 else "➡️ Similar")
+                    else:
+                        return "✅ Acquirer less leveraged" if gap < -0.05 else ("⚠️ Acquirer more leveraged" if gap > 0.05 else "➡️ Similar")
+
+                ta_a  = data_a.get("total_assets", 1) or 1
+                ta_t  = data_t.get("total_assets", 1) or 1
+                tl_a  = data_a.get("total_liabilities", 0)
+                tl_t  = data_t.get("total_liabilities", 0)
+                ni_a  = data_a.get("net_income", 0)
+                ni_t  = data_t.get("net_income", 0)
+                rev_a = data_a.get("revenue", 1) or 1
+                rev_t = data_t.get("revenue", 1) or 1
+                ca_a  = data_a.get("current_assets", 0)
+                ca_t  = data_t.get("current_assets", 0)
+                cl_a  = data_a.get("current_liabilities", 1) or 1
+                cl_t  = data_t.get("current_liabilities", 1) or 1
+                ocf_a = data_a.get("operating_cash_flow", 0)
+                ocf_t = data_t.get("operating_cash_flow", 0)
+                gp_a  = data_a.get("gross_profit", 0)
+                gp_t  = data_t.get("gross_profit", 0)
+
+                roa_a     = _safe_ratio(ni_a, ta_a)
+                roa_t     = _safe_ratio(ni_t, ta_t)
+                lev_a     = _safe_ratio(tl_a, ta_a)
+                lev_t     = _safe_ratio(tl_t, ta_t)
+                liq_a     = _safe_ratio(ca_a, cl_a)
+                liq_t     = _safe_ratio(ca_t, cl_t)
+                margin_a  = _safe_ratio(gp_a, rev_a)
+                margin_t  = _safe_ratio(gp_t, rev_t)
+                ocf_ta_a  = _safe_ratio(ocf_a, ta_a)
+                ocf_ta_t  = _safe_ratio(ocf_t, ta_t)
+                asset_a   = _safe_ratio(rev_a, ta_a)
+                asset_t   = _safe_ratio(rev_t, ta_t)
+
+                ratio_rows = [
+                    ("ROA (Net Income / Assets)",      _fmt_ratio(roa_a, pct=True),  _fmt_ratio(roa_t, pct=True),  (roa_a - roa_t) if roa_a is not None and roa_t is not None else None,   True,  "Profitability"),
+                    ("Leverage (Liabilities / Assets)",_fmt_ratio(lev_a, pct=True),  _fmt_ratio(lev_t, pct=True),  (lev_a - lev_t) if lev_a is not None and lev_t is not None else None,   False, "Solvency"),
+                    ("Liquidity (Current Ratio)",      _fmt_ratio(liq_a),             _fmt_ratio(liq_t),             (liq_a - liq_t) if liq_a is not None and liq_t is not None else None,   True,  "Liquidity"),
+                    ("Gross Margin",                   _fmt_ratio(margin_a, pct=True),_fmt_ratio(margin_t, pct=True),(margin_a - margin_t) if margin_a is not None and margin_t is not None else None, True, "Profitability"),
+                    ("OCF / Assets",                   _fmt_ratio(ocf_ta_a, pct=True),_fmt_ratio(ocf_ta_t, pct=True),(ocf_ta_a - ocf_ta_t) if ocf_ta_a is not None and ocf_ta_t is not None else None, True, "Cash Generation"),
+                    ("Asset Turnover (Rev / Assets)",  _fmt_ratio(asset_a),           _fmt_ratio(asset_t),           (asset_a - asset_t) if asset_a is not None and asset_t is not None else None, True, "Efficiency"),
+                ]
+
+                name_a_short = data_a.get("company_name") or data_a.get("ticker", "Acquirer")
+                name_t_short = data_t.get("company_name") or data_t.get("ticker", "Target")
+
+                ratio_df = pd.DataFrame([{
+                    "Ratio": row[0],
+                    "Category": row[5],
+                    name_a_short[:15]: row[1],
+                    name_t_short[:15]: row[2],
+                    "Signal": _signal(row[3], row[4]),
+                } for row in ratio_rows])
+
+                def _color_signal(val):
+                    if "✅" in str(val):
+                        return "background-color: #14532d; color: white"
+                    elif "⚠️" in str(val):
+                        return "background-color: #713f12; color: white"
+                    return ""
+
+                styled_ratio = ratio_df.style.map(_color_signal, subset=["Signal"])
+                st.dataframe(styled_ratio, use_container_width=True, hide_index=True)
+
                 # --- Side-by-side scores ---
                 st.markdown("### Individual Company Scores")
                 col_a, col_t = st.columns(2)
