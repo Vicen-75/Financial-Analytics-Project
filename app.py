@@ -575,6 +575,183 @@ def main():
             styled = summary_df.style.map(_color_zone, subset=["Zone / Flag"])
             st.dataframe(styled, use_container_width=True, hide_index=True)
 
+            # ------------------------------------------------------------------
+            # Historical Score Trends (only for public tickers)
+            # ------------------------------------------------------------------
+            if d.get("ticker") and d["ticker"] != "MANUAL":
+                st.markdown("---")
+                st.markdown("### 📈 Historical Score Trends")
+                st.caption("Evolution of key risk scores over the last 4 available fiscal years. "
+                           "Helps identify whether risk is improving or deteriorating over time.")
+
+                with st.spinner("Fetching historical data..."):
+                    try:
+                        import yfinance as yf
+                        tkr_hist = yf.Ticker(d["ticker"])
+                        bs_h   = tkr_hist.balance_sheet
+                        inc_h  = tkr_hist.income_stmt
+                        cf_h   = tkr_hist.cashflow
+
+                        # Get available years from balance sheet columns
+                        hist_years = []
+                        if bs_h is not None and not bs_h.empty:
+                            for col in bs_h.columns:
+                                try:
+                                    yr = col.year if hasattr(col, "year") else int(str(col)[:4])
+                                    hist_years.append((yr, col))
+                                except Exception:
+                                    continue
+                        hist_years = sorted(hist_years, key=lambda x: x[0])
+
+                        if len(hist_years) >= 2:
+                            hist_records = []
+                            for yr, col in hist_years:
+                                try:
+                                    idx_h  = list(bs_h.columns).index(col)
+                                    idx_hi = min(idx_h, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
+                                    idx_hc = min(idx_h, len(cf_h.columns) - 1) if cf_h is not None and not cf_h.empty else 0
+                                    idx_prev_h = min(idx_h + 1, len(bs_h.columns) - 1)
+                                    idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
+
+                                    def _hv(df, labels, col_i):
+                                        if df is None or df.empty:
+                                            return 0.0
+                                        for lbl in labels:
+                                            if lbl in df.index:
+                                                try:
+                                                    v = df.iloc[df.index.get_loc(lbl), col_i]
+                                                    if pd.notna(v) and math.isfinite(float(v)):
+                                                        return float(v)
+                                                except Exception:
+                                                    continue
+                                        return 0.0
+
+                                    d_hist = {
+                                        "total_assets":       _hv(bs_h, ["Total Assets"], idx_h) or 1,
+                                        "current_assets":     _hv(bs_h, ["Current Assets", "Total Current Assets"], idx_h),
+                                        "current_liabilities":_hv(bs_h, ["Current Liabilities", "Total Current Liabilities"], idx_h),
+                                        "total_liabilities":  _hv(bs_h, ["Total Liabilities Net Minority Interest", "Total Liabilities"], idx_h),
+                                        "total_equity":       _hv(bs_h, ["Total Equity Gross Minority Interest", "Stockholders Equity"], idx_h),
+                                        "retained_earnings":  _hv(bs_h, ["Retained Earnings"], idx_h),
+                                        "total_debt":         _hv(bs_h, ["Total Debt"], idx_h),
+                                        "net_ppe":            _hv(bs_h, ["Net PPE", "Net Property Plant And Equipment"], idx_h),
+                                        "receivables":        _hv(bs_h, ["Accounts Receivable", "Net Receivable", "Receivables"], idx_h),
+                                        "securities":         _hv(bs_h, ["Available For Sale Securities", "Investments And Advances"], idx_h),
+                                        "cash_and_equivalents":_hv(bs_h, ["Cash And Cash Equivalents"], idx_h),
+                                        "short_term_investments":_hv(bs_h, ["Other Short Term Investments", "Short Term Investments"], idx_h),
+                                        "revenue":            _hv(inc_h, ["Total Revenue", "Revenue"], idx_hi) or 1,
+                                        "gross_profit":       _hv(inc_h, ["Gross Profit"], idx_hi),
+                                        "ebit":               _hv(inc_h, ["EBIT", "Operating Income"], idx_hi),
+                                        "net_income":         _hv(inc_h, ["Net Income", "Net Income Common Stockholders"], idx_hi),
+                                        "depreciation":       _hv(inc_h, ["Depreciation And Amortization In Income Statement", "Reconciled Depreciation"], idx_hi),
+                                        "sga_expense":        _hv(inc_h, ["Selling General And Administration"], idx_hi),
+                                        "operating_expenses": _hv(inc_h, ["Total Operating Expenses", "Operating Expense"], idx_hi),
+                                        "operating_cash_flow":_hv(cf_h,  ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"], idx_hc),
+                                        # Prior year for Beneish
+                                        "prev_revenue":       _hv(inc_h, ["Total Revenue", "Revenue"], idx_prev_hi) or 1,
+                                        "prev_gross_profit":  _hv(inc_h, ["Gross Profit"], idx_prev_hi),
+                                        "prev_total_assets":  _hv(bs_h,  ["Total Assets"], idx_prev_h) or 1,
+                                        "prev_receivables":   _hv(bs_h,  ["Accounts Receivable", "Net Receivable", "Receivables"], idx_prev_h),
+                                        "prev_ppe":           _hv(bs_h,  ["Net PPE", "Net Property Plant And Equipment"], idx_prev_h),
+                                        "prev_securities":    _hv(bs_h,  ["Available For Sale Securities", "Investments And Advances"], idx_prev_h),
+                                        "prev_depreciation":  _hv(inc_h, ["Depreciation And Amortization In Income Statement", "Reconciled Depreciation"], idx_prev_hi),
+                                        "prev_sga":           _hv(inc_h, ["Selling General And Administration"], idx_prev_hi),
+                                        "prev_total_debt":    _hv(bs_h,  ["Total Debt"], idx_prev_h),
+                                        "industry":           d.get("industry", "Manufacturing"),
+                                        "market_cap":         d.get("market_cap", 0),
+                                    }
+
+                                    from models import beneish_mscore, logistic_regression, run_xgboost_zscore
+                                    b_res  = beneish_mscore(d_hist)
+                                    lr_res = logistic_regression(d_hist)
+                                    xg_res = run_xgboost_zscore(d_hist)
+
+                                    hist_records.append({
+                                        "Year":                    yr,
+                                        "Beneish M-Score":         b_res["score"],
+                                        "Bankruptcy Prob (%)":     round(lr_res["score"] * 100, 1),
+                                        "XGBoost Distress Prob":   round(xg_res["score"] * 100, 1),
+                                        "Beneish Zone":            b_res["zone"],
+                                        "Bankruptcy Zone":         lr_res["zone"],
+                                        "Distress Zone":           xg_res["zone"],
+                                    })
+                                except Exception:
+                                    continue
+
+                            if hist_records:
+                                df_hist = pd.DataFrame(hist_records).sort_values("Year")
+
+                                # Line chart
+                                fig_hist = go.Figure()
+                                fig_hist.add_trace(go.Scatter(
+                                    x=df_hist["Year"], y=df_hist["Beneish M-Score"],
+                                    name="Beneish M-Score", mode="lines+markers",
+                                    line=dict(color="#a78bfa", width=2),
+                                    marker=dict(size=8),
+                                ))
+                                fig_hist.add_trace(go.Scatter(
+                                    x=df_hist["Year"], y=df_hist["Bankruptcy Prob (%)"],
+                                    name="Bankruptcy Prob (%)", mode="lines+markers",
+                                    line=dict(color="#f59e0b", width=2),
+                                    marker=dict(size=8),
+                                    yaxis="y2",
+                                ))
+                                fig_hist.add_trace(go.Scatter(
+                                    x=df_hist["Year"], y=df_hist["XGBoost Distress Prob"],
+                                    name="XGBoost Distress Prob (%)", mode="lines+markers",
+                                    line=dict(color="#60a5fa", width=2),
+                                    marker=dict(size=8),
+                                    yaxis="y2",
+                                ))
+                                # Reference line for Beneish threshold
+                                fig_hist.add_hline(y=-1.78, line_dash="dash",
+                                                   line_color="#ef4444", opacity=0.6,
+                                                   annotation_text="Beneish threshold (-1.78)",
+                                                   annotation_position="bottom right")
+
+                                fig_hist.update_layout(
+                                    title=f"Risk Score Trends — {name}",
+                                    template="plotly_dark",
+                                    height=400,
+                                    margin=dict(t=60, b=40),
+                                    yaxis=dict(title="Beneish M-Score", side="left"),
+                                    yaxis2=dict(title="Probability (%)", overlaying="y",
+                                                side="right", range=[0, 100]),
+                                    legend=dict(orientation="h", yanchor="bottom",
+                                                y=1.02, xanchor="right", x=1),
+                                    xaxis=dict(tickmode="array", tickvals=df_hist["Year"].tolist()),
+                                )
+                                st.plotly_chart(fig_hist, use_container_width=True,
+                                                key=f"hist_trend_{d.get('ticker','')}")
+
+                                # Summary table
+                                display_df = df_hist[["Year", "Beneish M-Score",
+                                                       "Bankruptcy Prob (%)", "XGBoost Distress Prob",
+                                                       "Beneish Zone", "Bankruptcy Zone", "Distress Zone"]].copy()
+                                display_df["Beneish M-Score"] = display_df["Beneish M-Score"].round(4)
+
+                                def _color_zone_hist(val):
+                                    v = str(val).lower()
+                                    if "safe" in v or "unlikely" in v or "low" in v:
+                                        return "background-color: #14532d; color: white"
+                                    elif "grey" in v or "moderate" in v or "monitor" in v:
+                                        return "background-color: #713f12; color: white"
+                                    elif "manipulator" in v and "unlikely" not in v:
+                                        return "background-color: #7f1d1d; color: white"
+                                    return ""
+
+                                styled_hist = display_df.style.map(
+                                    _color_zone_hist,
+                                    subset=["Beneish Zone", "Bankruptcy Zone", "Distress Zone"]
+                                )
+                                st.dataframe(styled_hist, use_container_width=True, hide_index=True)
+                            else:
+                                st.info("Could not compute historical scores — insufficient data.")
+                        else:
+                            st.info("Historical data requires at least 2 years of financial statements.")
+                    except Exception as e:
+                        st.warning(f"Historical trend analysis unavailable: {e}")
+
             # Individual model cards
             st.markdown("### Detailed Model Results")
             for r in results:
