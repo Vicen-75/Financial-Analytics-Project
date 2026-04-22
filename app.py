@@ -133,7 +133,23 @@ def render_score_card(result: dict):
             fig = go.Figure()
             names = [v["name"][:30] for v in vars_]
             contribs = [v["contribution"] for v in vars_]
-            colors = ["#22c55e" if c >= 0 else "#ef4444" for c in contribs]
+
+            # Determine if higher contribution = more risk or more safety
+            # Models where higher score = MORE RISK (positive contribution is bad):
+            #   Logistic Regression, Beneish M-Score, XGBoost
+            # Models where higher score = MORE SAFETY (positive contribution is good):
+            #   ISDS sector models, Altman Z-Score, Grover G-Score
+            direction = result.get("direction", "")
+            higher_is_riskier = any(kw in direction.lower() for kw in
+                                    ["lower = safer", "probability", "manipulation", "distress prob"])
+
+            if higher_is_riskier:
+                # Positive contribution = more risk = RED; negative = less risk = GREEN
+                colors = ["#ef4444" if c >= 0 else "#22c55e" for c in contribs]
+            else:
+                # Positive contribution = safer = GREEN; negative = riskier = RED
+                colors = ["#22c55e" if c >= 0 else "#ef4444" for c in contribs]
+
             fig.add_trace(go.Bar(x=contribs, y=names, orientation="h",
                                  marker_color=colors, text=[f"{c:.3f}" for c in contribs],
                                  textposition="outside"))
