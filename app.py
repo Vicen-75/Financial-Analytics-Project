@@ -666,9 +666,15 @@ def main():
                                     lr_res = logistic_regression(d_hist)
                                     xg_res = run_xgboost_zscore(d_hist)
 
+                                        # Filter out anomalous Beneish values
+                                    # (valid range is roughly -10 to +5)
+                                    beneish_val = b_res["score"]
+                                    if not (-20 < beneish_val < 10):
+                                        continue
+
                                     hist_records.append({
                                         "Year":                    yr,
-                                        "Beneish M-Score":         b_res["score"],
+                                        "Beneish M-Score":         beneish_val,
                                         "Bankruptcy Prob (%)":     round(lr_res["score"] * 100, 1),
                                         "XGBoost Distress Prob":   round(xg_res["score"] * 100, 1),
                                         "Beneish Zone":            b_res["zone"],
