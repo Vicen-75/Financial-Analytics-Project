@@ -542,26 +542,32 @@ def fetch_10k_text(ticker: str, year: int) -> Tuple[str, Optional[str]]:
 # L&M Bag-of-Words Feature Extraction
 # ---------------------------------------------------------------------------
 
-def compute_lm_features(text: str) -> Dict[str, float]:
+def compute_lm_features(text: str) -> Dict:
     """Compute Loughran & McDonald dictionary features from raw text.
 
     Returns a dict with:
-      - {category}_count: raw word count per category
-      - {category}_pct:   count / total_words
-      - net_sentiment:     positive_pct - negative_pct
-      - total_words:       total word count
+      - {category}_count:  raw word count per category
+      - {category}_pct:    count / total_words
+      - {category}_top5:   list of (word, frequency) tuples for top 5 words
+      - net_sentiment:      positive_pct - negative_pct
+      - total_words:        total word count
     """
+    from collections import Counter
+
     # Tokenise: lowercase, keep only alphabetic tokens
     words = re.findall(r"[a-z]+", text.lower())
     total = len(words) if words else 1  # avoid division by zero
 
-    features: Dict[str, float] = {"total_words": len(words)}
+    features: Dict = {"total_words": len(words)}
 
     for cat_name, word_set in _LM_CATEGORIES.items():
         key = cat_name.lower().replace(" ", "_")
-        count = sum(1 for w in words if w in word_set)
+        matched = [w for w in words if w in word_set]
+        count = len(matched)
         features[f"{key}_count"] = count
         features[f"{key}_pct"] = count / total
+        # Top 5 most frequent words in this category
+        features[f"{key}_top5"] = Counter(matched).most_common(5)
 
     features["net_sentiment"] = features.get("positive_pct", 0) - features.get("negative_pct", 0)
 
