@@ -604,7 +604,7 @@ def main():
             # ------------------------------------------------------------------
             if d.get("ticker") and d["ticker"] != "MANUAL":
                 st.markdown("---")
-                with st.expander("📈 Historical Score Trends", expanded=False):
+                with st.expander("Historical Score Trends", expanded=False):
                     st.caption("Evolution of key risk scores over the last 4 available fiscal years. "
                                "Helps identify whether risk is improving or deteriorating over time.")
 
@@ -804,7 +804,7 @@ def main():
                                     )
 
                                     fig_b.update_layout(
-                                        title=dict(text="📊 Beneish M-Score — Manipulation Risk Over Time",
+                                        title=dict(text="Beneish M-Score — Manipulation Risk Over Time",
                                                    font=dict(size=15)),
                                         template="plotly_dark",
                                         height=320,
@@ -891,7 +891,7 @@ def main():
                                     )
 
                                     fig_p.update_layout(
-                                        title=dict(text="📊 Bankruptcy & Distress Probability Over Time",
+                                        title=dict(text="Bankruptcy & Distress Probability Over Time",
                                                    font=dict(size=15)),
                                         template="plotly_dark",
                                         height=350,
