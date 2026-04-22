@@ -643,16 +643,16 @@ def main():
                         inc_years = _years_in_df(inc_h)
                         cf_years  = _years_in_df(cf_h)
 
-                        # Years with complete data for Bankruptcy + XGBoost (just need current year)
-                        common_years = bs_years & inc_years & cf_years
+                        # Years with complete data in ALL three dataframes
+                        common_years = sorted(bs_years & inc_years & cf_years)
 
-                        # Years with complete data for Beneish (need current AND prior year)
-                        # Prior year must also exist in both BS and IS
-                        beneish_years_ok = {yr for yr in common_years
-                                            if (yr - 1) in bs_years and (yr - 1) in inc_years}
+                        # Only keep years where the PRIOR year also exists in both BS and IS
+                        # This guarantees valid Beneish calculation for every displayed year
+                        valid_years = [yr for yr in common_years
+                                       if (yr - 1) in bs_years and (yr - 1) in inc_years]
 
-                        # Filter hist_years to common years only
-                        hist_years = [(yr, col) for yr, col in hist_years if yr in common_years]
+                        # Filter hist_years to valid_years only
+                        hist_years = [(yr, col) for yr, col in hist_years if yr in valid_years]
                         hist_years = sorted(hist_years, key=lambda x: x[0])
 
                         if len(hist_years) >= 2:
@@ -684,10 +684,8 @@ def main():
                                     idx_prev_h  = _find_col_idx(bs_h,  prev_yr)
                                     idx_prev_hi = _find_col_idx(inc_h, prev_yr)
 
-                                    # If prior year not found in a dataframe, skip Beneish for this year
-                                    beneish_data_ok = (idx_prev_h is not None and idx_prev_hi is not None)
-
-                                    # Fallback for other models (non-Beneish)
+                                    # Both prior year columns guaranteed to exist (filtered above)
+                                    # Fallback only as safety net
                                     if idx_prev_h  is None: idx_prev_h  = min(idx_h  + 1, len(bs_h.columns)  - 1)
                                     if idx_prev_hi is None: idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
 
@@ -741,12 +739,12 @@ def main():
 
                                     from models import beneish_mscore, logistic_regression, run_xgboost_zscore
 
-                                    b_res  = beneish_mscore(d_hist) if yr in beneish_years_ok else None
+                                    b_res  = beneish_mscore(d_hist)
                                     lr_res = logistic_regression(d_hist)
                                     xg_res = run_xgboost_zscore(d_hist)
 
-                                    beneish_val   = b_res["score"] if b_res else None
-                                    beneish_valid = (beneish_val is not None)
+                                    beneish_val   = b_res["score"]
+                                    beneish_valid = True
 
                                     hist_records.append({
                                         "Year":                    yr,
