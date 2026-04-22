@@ -629,13 +629,22 @@ def main():
 
                         if len(hist_years) >= 2:
                             hist_records = []
-                            for yr, col in hist_years:
+                            for i, (yr, col) in enumerate(hist_years):
                                 try:
                                     idx_h  = list(bs_h.columns).index(col)
                                     idx_hi = min(idx_h, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
                                     idx_hc = min(idx_h, len(cf_h.columns) - 1) if cf_h is not None and not cf_h.empty else 0
-                                    idx_prev_h = min(idx_h + 1, len(bs_h.columns) - 1)
-                                    idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
+
+                                    # Use the PREVIOUS year in hist_years as prior year for Beneish
+                                    # This guarantees correct BS/IS alignment across all years
+                                    if i > 0:
+                                        prev_col = hist_years[i - 1][1]
+                                        idx_prev_h  = list(bs_h.columns).index(prev_col)
+                                        idx_prev_hi = min(idx_prev_h, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
+                                    else:
+                                        # First year — no prior year available, use same year as fallback
+                                        idx_prev_h  = min(idx_h + 1, len(bs_h.columns) - 1)
+                                        idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
 
                                     def _hv(df, labels, col_i):
                                         if df is None or df.empty:
@@ -773,41 +782,28 @@ def main():
                                 # ── Chart 2: Bankruptcy & Distress Probabilities ──
                                 fig_p = go.Figure()
 
-                                # Bankruptcy probability — points always amber (line color)
-                                # border ring changes to red/green to signal zone
+                                # Bankruptcy probability — single amber color throughout
                                 fig_p.add_trace(go.Scatter(
                                     x=years, y=df_hist["Bankruptcy Prob (%)"].tolist(),
                                     mode="lines+markers+text",
                                     name="Bankruptcy Probability",
                                     line=dict(color="#f59e0b", width=2.5),
-                                    marker=dict(size=12,
-                                                color="#f59e0b",
-                                                line=dict(
-                                                    color=["#22c55e" if v < 10 else
-                                                           "#f59e0b" if v < 40 else "#ef4444"
-                                                           for v in df_hist["Bankruptcy Prob (%)"]],
-                                                    width=3)),
+                                    marker=dict(size=10, color="#f59e0b"),
                                     text=[f"{v:.1f}%" for v in df_hist["Bankruptcy Prob (%)"]],
                                     textposition="top center",
-                                    textfont=dict(size=11),
+                                    textfont=dict(size=11, color="#f59e0b"),
                                 ))
 
-                                # XGBoost distress probability — points always blue (line color)
+                                # XGBoost distress probability — single blue color throughout
                                 fig_p.add_trace(go.Scatter(
                                     x=years, y=df_hist["XGBoost Distress Prob"].tolist(),
                                     mode="lines+markers+text",
                                     name="XGBoost Distress Score",
                                     line=dict(color="#60a5fa", width=2.5),
-                                    marker=dict(size=12,
-                                                color="#60a5fa",
-                                                line=dict(
-                                                    color=["#22c55e" if v < 40 else
-                                                           "#f59e0b" if v < 60 else "#ef4444"
-                                                           for v in df_hist["XGBoost Distress Prob"]],
-                                                    width=3)),
+                                    marker=dict(size=10, color="#60a5fa"),
                                     text=[f"{v:.1f}%" for v in df_hist["XGBoost Distress Prob"]],
                                     textposition="bottom center",
-                                    textfont=dict(size=11),
+                                    textfont=dict(size=11, color="#60a5fa"),
                                 ))
 
                                 # Reference zones
