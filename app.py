@@ -149,38 +149,76 @@ def render_score_card(result: dict):
 # Helper: render gauge chart for overall risk
 # ---------------------------------------------------------------------------
 
-# === FIXED: Added unique keys to plotly_chart to fix StreamlitDuplicateElementId in merger analysis ===
+# === IMPROVED: Three separate gauges for Manipulation, Bankruptcy, and Distress ===
 def render_risk_gauge(results: list[dict], key: str = "risk_gauge"):
-    """Create a composite risk gauge from all model results."""
-    risk_scores = []
-    for r in results:
-        zone = r["zone"].lower()
-        if "safe" in zone or "healthy" in zone or "unlikely" in zone or "low" in zone:
-            risk_scores.append(1)
-        elif "grey" in zone or "monitor" in zone or "moderate" in zone:
-            risk_scores.append(2)
-        else:
-            risk_scores.append(3)
-    avg = sum(risk_scores) / len(risk_scores) if risk_scores else 2
+    """Render three separate risk gauges: Manipulation, Bankruptcy, and Financial Distress."""
 
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=avg,
-        title={"text": "Composite Risk Level", "font": {"size": 18}},
-        gauge={
-            "axis": {"range": [1, 3], "tickvals": [1, 1.5, 2, 2.5, 3],
-                     "ticktext": ["Safe", "", "Grey", "", "Distress"]},
-            "bar": {"color": "#60a5fa"},
-            "steps": [
-                {"range": [1, 1.67], "color": "#14532d"},
-                {"range": [1.67, 2.33], "color": "#713f12"},
-                {"range": [2.33, 3], "color": "#7f1d1d"},
-            ],
-            "threshold": {"line": {"color": "white", "width": 3}, "thickness": 0.8, "value": avg},
-        },
-    ))
-    fig.update_layout(height=280, margin=dict(t=50, b=10, l=30, r=30), template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True, key=key)
+    # Separate models into three distinct risk dimensions
+    manipulation = next((r for r in results if "Beneish" in r["model_name"]), None)
+    bankruptcy   = next((r for r in results if "Logistic" in r["model_name"]), None)
+    distress     = next((r for r in results if "XGBoost" in r["model_name"] or "ISDS" in r["model_name"]), None)
+
+    def _zone_to_num(zone: str) -> float:
+        z = zone.lower()
+        if "safe" in z or "unlikely" in z or "low" in z or "healthy" in z:
+            return 1.0
+        elif "grey" in z or "moderate" in z or "monitor" in z:
+            return 2.0
+        return 3.0
+
+    def _make_gauge(result: dict, title: str, key_suffix: str):
+        if result is None:
+            st.info(f"{title}: no data available.")
+            return
+        val = _zone_to_num(result["zone"])
+        color = {"green": "#22c55e", "orange": "#f59e0b", "red": "#ef4444"}.get(result["color"], "#60a5fa")
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=val,
+            number={"font": {"size": 1}, "valueformat": ""},
+            title={"text": f"<b>{title}</b><br><span style='font-size:0.85em;color:{color}'>{result['zone']}</span>",
+                   "font": {"size": 13}},
+            gauge={
+                "axis": {"range": [1, 3], "tickvals": [1, 2, 3],
+                         "ticktext": ["Safe", "Grey", "Distress"],
+                         "tickfont": {"size": 10}},
+                "bar": {"color": color, "thickness": 0.3},
+                "steps": [
+                    {"range": [1, 1.67], "color": "#14532d"},
+                    {"range": [1.67, 2.33], "color": "#713f12"},
+                    {"range": [2.33, 3], "color": "#7f1d1d"},
+                ],
+                "threshold": {"line": {"color": "white", "width": 3},
+                              "thickness": 0.8, "value": val},
+            },
+        ))
+        fig.update_layout(height=220, margin=dict(t=80, b=10, l=20, r=20),
+                          template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True, key=f"{key}_{key_suffix}")
+
+    # Render three gauges side by side
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        _make_gauge(manipulation, "Manipulation Risk", "manip")
+    with col2:
+        _make_gauge(bankruptcy, "Bankruptcy Risk", "bank")
+    with col3:
+        _make_gauge(distress, "Financial Distress", "dist")
+
+    # Summary line below gauges
+    indicators = []
+    for r in [manipulation, bankruptcy, distress]:
+        if r:
+            z = r["zone"].lower()
+            if "safe" in z or "unlikely" in z or "low" in z or "healthy" in z:
+                indicators.append("🟢")
+            elif "grey" in z or "moderate" in z or "monitor" in z:
+                indicators.append("🟡")
+            else:
+                indicators.append("🔴")
+    safe_count = indicators.count("🟢")
+    st.markdown(f"**Risk Summary:** {' '.join(indicators)} — "
+                f"**{safe_count} of {len(indicators)} indicators in Safe Zone**")
 
 
 # ---------------------------------------------------------------------------
@@ -642,37 +680,18 @@ def main():
         with tab_a:
             st.markdown("### Acquirer Company")
             data_a = data_input_panel(key_prefix="acq")
-            if data_a is not None:
-                if isinstance(data_a, list):
-                    data_a = data_a[0]
-                st.session_state["merger_data_a"] = data_a
 
         with tab_t:
             st.markdown("### Target Company")
             data_t = data_input_panel(key_prefix="tgt")
-            if data_t is not None:
-                if isinstance(data_t, list):
-                    data_t = data_t[0]
-                st.session_state["merger_data_t"] = data_t
-
-        # Recuperar de session_state si el usuario cambió de pestaña
-        data_a = st.session_state.get("merger_data_a")
-        data_t = st.session_state.get("merger_data_t")
-
-        # Indicadores de estado
-        col_status_a, col_status_t = st.columns(2)
-        with col_status_a:
-            if data_a:
-                st.success(f"✅ Acquirer loaded: {data_a.get('company_name') or data_a.get('ticker', 'Unknown')}")
-            else:
-                st.warning("⏳ Acquirer: no data yet — fetch or enter data in the Acquirer tab.")
-        with col_status_t:
-            if data_t:
-                st.success(f"✅ Target loaded: {data_t.get('company_name') or data_t.get('ticker', 'Unknown')}")
-            else:
-                st.warning("⏳ Target: no data yet — fetch or enter data in the Target tab.")
 
         if data_a and data_t:
+            # Ensure we have single dicts (not lists)
+            if isinstance(data_a, list):
+                data_a = data_a[0]
+            if isinstance(data_t, list):
+                data_t = data_t[0]
+
             if st.button("Run Merger Analysis", type="primary", key="run_merger"):
                 st.markdown("---")
                 st.markdown("## Merger Analysis Results")
