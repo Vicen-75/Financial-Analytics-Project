@@ -627,6 +627,28 @@ def main():
                                     continue
                         hist_years = sorted(hist_years, key=lambda x: x[0])
 
+                        # Build the intersection of years available in ALL three dataframes
+                        # Only years present in BS, IS and CF can have complete Beneish data
+                        def _years_in_df(df):
+                            result = set()
+                            if df is None or df.empty:
+                                return result
+                            for c in df.columns:
+                                try:
+                                    result.add(c.year if hasattr(c, "year") else int(str(c)[:4]))
+                                except Exception:
+                                    continue
+                            return result
+
+                        bs_years  = _years_in_df(bs_h)
+                        inc_years = _years_in_df(inc_h)
+                        cf_years  = _years_in_df(cf_h)
+                        common_years = bs_years & inc_years & cf_years
+
+                        # Filter hist_years to only common years
+                        hist_years = [(yr, col) for yr, col in hist_years if yr in common_years]
+                        hist_years = sorted(hist_years, key=lambda x: x[0])
+
                         if len(hist_years) >= 2:
                             hist_records = []
                             for i, (yr, col) in enumerate(hist_years):
@@ -635,16 +657,33 @@ def main():
                                     idx_hi = min(idx_h, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
                                     idx_hc = min(idx_h, len(cf_h.columns) - 1) if cf_h is not None and not cf_h.empty else 0
 
-                                    # Use the PREVIOUS year in hist_years as prior year for Beneish
-                                    # This guarantees correct BS/IS alignment across all years
-                                    if i > 0:
-                                        prev_col = hist_years[i - 1][1]
-                                        idx_prev_h  = list(bs_h.columns).index(prev_col)
-                                        idx_prev_hi = min(idx_prev_h, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
-                                    else:
-                                        # First year — no prior year available, use same year as fallback
-                                        idx_prev_h  = min(idx_h + 1, len(bs_h.columns) - 1)
-                                        idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
+                                    # Find prior year index in each dataframe independently
+                                    # by searching for the previous year's column directly
+                                    # This avoids cross-dataframe index misalignment
+                                    prev_yr = yr - 1
+
+                                    def _find_col_idx(df, target_year):
+                                        """Find column index for target_year in df. Returns None if not found."""
+                                        if df is None or df.empty:
+                                            return None
+                                        for ci, c in enumerate(df.columns):
+                                            try:
+                                                cy = c.year if hasattr(c, "year") else int(str(c)[:4])
+                                                if cy == target_year:
+                                                    return ci
+                                            except Exception:
+                                                continue
+                                        return None
+
+                                    idx_prev_h  = _find_col_idx(bs_h,  prev_yr)
+                                    idx_prev_hi = _find_col_idx(inc_h, prev_yr)
+
+                                    # If prior year not found in a dataframe, skip Beneish for this year
+                                    beneish_data_ok = (idx_prev_h is not None and idx_prev_hi is not None)
+
+                                    # Fallback for other models (non-Beneish)
+                                    if idx_prev_h  is None: idx_prev_h  = min(idx_h  + 1, len(bs_h.columns)  - 1)
+                                    if idx_prev_hi is None: idx_prev_hi = min(idx_hi + 1, len(inc_h.columns) - 1) if inc_h is not None and not inc_h.empty else 0
 
                                     def _hv(df, labels, col_i):
                                         if df is None or df.empty:
@@ -695,16 +734,13 @@ def main():
                                     }
 
                                     from models import beneish_mscore, logistic_regression, run_xgboost_zscore
-                                    b_res  = beneish_mscore(d_hist)
+
+                                    b_res  = beneish_mscore(d_hist) if beneish_data_ok else None
                                     lr_res = logistic_regression(d_hist)
                                     xg_res = run_xgboost_zscore(d_hist)
 
-                                        # Filter out anomalous Beneish values
-                                    # (valid range is roughly -10 to +5)
-                                    beneish_val = b_res["score"]
-                                    # Filter anomalous Beneish values (valid range -20 to +10)
-                                    # If anomalous, still include the year but mark Beneish as None
-                                    beneish_valid = (-20 < beneish_val < 10)
+                                    beneish_val   = b_res["score"] if b_res else None
+                                    beneish_valid = (beneish_val is not None and -10 < beneish_val < 5)
 
                                     hist_records.append({
                                         "Year":                    yr,
