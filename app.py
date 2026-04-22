@@ -406,6 +406,14 @@ def render_valuation(data: dict, key_prefix: str = "single"):
     # Auto-estimate growth from historical financials
     est_growth = estimate_growth(data)
 
+    # Reset growth rate in session_state when ticker changes
+    # This ensures the field updates automatically for each new company
+    ticker_key = f"{key_prefix}_last_ticker"
+    growth_key = f"{key_prefix}_val_g"
+    if st.session_state.get(ticker_key) != ticker:
+        st.session_state[ticker_key] = ticker
+        st.session_state[growth_key] = float(est_growth)
+
     c1, c2, c3 = st.columns(3)
     with c1:
         rf = st.number_input("Risk-Free Rate (Rf)", value=0.043, format="%.4f", key=f"{key_prefix}_val_rf")
@@ -413,7 +421,7 @@ def render_valuation(data: dict, key_prefix: str = "single"):
         mrp = st.number_input("Market Risk Premium", value=0.055, format="%.4f", key=f"{key_prefix}_val_mrp")
     with c3:
         growth = st.number_input("Expected Growth Rate", value=float(est_growth),
-                                 format="%.3f", key=f"{key_prefix}_val_g",
+                                 format="%.3f", key=growth_key,
                                  help=f"Auto-estimated: {est_growth:.1%} (from historical financials). Adjust as needed.")
 
     with st.spinner("Estimating beta (5y weekly data)..."):
