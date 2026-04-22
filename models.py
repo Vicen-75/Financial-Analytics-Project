@@ -1014,37 +1014,45 @@ def beneish_mscore(d: dict) -> dict:
     dsr_curr = _safe_div(recv, rev)
     dsr_prev = _safe_div(prev_recv, prev_rev)
     dsri = _safe_div(dsr_curr, dsr_prev, 1.0)
+    dsri = max(0.5, min(dsri, 4.0))   # normal range ~0.8–1.5
 
     # 2. GMI — Gross Margin Index
     gm_curr = _safe_div(gp, rev)
     gm_prev = _safe_div(prev_gp, prev_rev)
     gmi = _safe_div(gm_prev, gm_curr, 1.0)  # Note: prev / curr
+    gmi = max(0.5, min(gmi, 4.0))     # normal range ~0.8–1.2
 
     # 3. AQI — Asset Quality Index
     aq_curr = 1.0 - _safe_div(ca + ppe + sec, ta)
     aq_prev = 1.0 - _safe_div(prev_ca + prev_ppe + prev_sec, prev_ta)
     aqi = _safe_div(aq_curr, aq_prev, 1.0)
+    aqi = max(0.5, min(aqi, 4.0))     # normal range ~0.8–1.2
 
     # 4. SGI — Sales Growth Index
     sgi = _safe_div(rev, prev_rev, 1.0)
+    sgi = max(0.5, min(sgi, 3.0))     # normal range ~0.9–1.5
 
     # 5. DEPI — Depreciation Index
     dep_rate_curr = _safe_div(dep, dep + ppe) if (dep + ppe) > 0 else 0.0
     dep_rate_prev = _safe_div(prev_dep, prev_dep + prev_ppe) if (prev_dep + prev_ppe) > 0 else 0.0
     depi = _safe_div(dep_rate_prev, dep_rate_curr, 1.0)
+    depi = max(0.5, min(depi, 4.0))   # normal range ~0.8–1.2
 
     # 6. SGAI — SGA Expense Index
     sga_curr = _safe_div(sga, rev)
     sga_prev = _safe_div(prev_sga, prev_rev)
     sgai = _safe_div(sga_curr, sga_prev, 1.0)
+    sgai = max(0.5, min(sgai, 4.0))   # normal range ~0.8–1.2
 
     # 7. TATA — Total Accruals to Total Assets
     tata = _safe_div(ni - ocf, ta)
+    tata = max(-0.5, min(tata, 0.5))  # normal range ~-0.1–0.1
 
     # 8. LVGI — Leverage Index
     lev_curr = _safe_div(debt, ta)
     lev_prev = _safe_div(prev_debt, prev_ta)
     lvgi = _safe_div(lev_curr, lev_prev, 1.0)
+    lvgi = max(0.5, min(lvgi, 4.0))   # normal range ~0.8–1.2
 
     # M-Score
     m = (-4.84 + 0.920 * dsri + 0.528 * gmi + 0.404 * aqi + 0.892 * sgi
