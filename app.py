@@ -153,11 +153,14 @@ def render_score_card(result: dict):
             fig.add_trace(go.Bar(x=contribs, y=names, orientation="h",
                                  marker_color=colors, text=[f"{c:.3f}" for c in contribs],
                                  textposition="outside"))
-            fig.update_layout(title="Variable Contributions", height=max(250, len(vars_)*45),
-                              margin=dict(l=0, r=40, t=40, b=0),
-                              xaxis_title="Contribution to Score",
-                              yaxis=dict(autorange="reversed"),
-                              template="plotly_dark")
+            fig.update_layout(
+                title=dict(text="Variable Contributions", font=dict(family="Times New Roman", size=14, color="#e2e8f0")),
+                font=dict(family="Raleway", size=11),
+                height=max(250, len(vars_)*45),
+                margin=dict(l=0, r=40, t=40, b=0),
+                xaxis_title="Contribution to Score",
+                yaxis=dict(autorange="reversed"),
+                template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
 
 
@@ -806,7 +809,8 @@ def main():
 
                                     fig_b.update_layout(
                                         title=dict(text="Beneish M-Score — Manipulation Risk Over Time",
-                                                   font=dict(size=15)),
+                                                   font=dict(size=15, family="Times New Roman", color="#e2e8f0")),
+                                        font=dict(family="Raleway", size=11),
                                         template="plotly_dark",
                                         height=320,
                                         margin=dict(t=60, b=40, l=60, r=20),
@@ -893,7 +897,8 @@ def main():
 
                                     fig_p.update_layout(
                                         title=dict(text="Bankruptcy & Distress Probability Over Time",
-                                                   font=dict(size=15)),
+                                                   font=dict(size=15, family="Times New Roman", color="#e2e8f0")),
+                                        font=dict(family="Raleway", size=11),
                                         template="plotly_dark",
                                         height=350,
                                         margin=dict(t=60, b=40, l=60, r=100),
@@ -1279,9 +1284,12 @@ def main():
                                                      theta=categories + [categories[0]],
                                                      fill="toself", name="Target",
                                                      line_color="#f59e0b"))
-                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-                                         template="plotly_dark", height=450,
-                                         title="Normalised Risk Profile (higher = safer)")
+                fig_radar.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+                    template="plotly_dark", height=450,
+                    title=dict(text="Normalised Risk Profile (higher = safer)",
+                               font=dict(family="Times New Roman", size=14, color="#e2e8f0")),
+                    font=dict(family="Raleway", size=11))
                 st.plotly_chart(fig_radar, use_container_width=True)
 
                 # --- Valuation for each company ---
