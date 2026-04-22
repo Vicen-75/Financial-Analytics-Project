@@ -628,7 +628,6 @@ def main():
                         hist_years = sorted(hist_years, key=lambda x: x[0])
 
                         # Build the intersection of years available in ALL three dataframes
-                        # Only years present in BS, IS and CF can have complete Beneish data
                         def _years_in_df(df):
                             result = set()
                             if df is None or df.empty:
@@ -643,9 +642,16 @@ def main():
                         bs_years  = _years_in_df(bs_h)
                         inc_years = _years_in_df(inc_h)
                         cf_years  = _years_in_df(cf_h)
+
+                        # Years with complete data for Bankruptcy + XGBoost (just need current year)
                         common_years = bs_years & inc_years & cf_years
 
-                        # Filter hist_years to only common years
+                        # Years with complete data for Beneish (need current AND prior year)
+                        # Prior year must also exist in both BS and IS
+                        beneish_years_ok = {yr for yr in common_years
+                                            if (yr - 1) in bs_years and (yr - 1) in inc_years}
+
+                        # Filter hist_years to common years only
                         hist_years = [(yr, col) for yr, col in hist_years if yr in common_years]
                         hist_years = sorted(hist_years, key=lambda x: x[0])
 
@@ -735,12 +741,12 @@ def main():
 
                                     from models import beneish_mscore, logistic_regression, run_xgboost_zscore
 
-                                    b_res  = beneish_mscore(d_hist) if beneish_data_ok else None
+                                    b_res  = beneish_mscore(d_hist) if yr in beneish_years_ok else None
                                     lr_res = logistic_regression(d_hist)
                                     xg_res = run_xgboost_zscore(d_hist)
 
                                     beneish_val   = b_res["score"] if b_res else None
-                                    beneish_valid = (beneish_val is not None and -10 < beneish_val < 5)
+                                    beneish_valid = (beneish_val is not None)
 
                                     hist_records.append({
                                         "Year":                    yr,
