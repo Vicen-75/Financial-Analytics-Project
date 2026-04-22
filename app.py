@@ -693,15 +693,16 @@ def main():
                                         # Filter out anomalous Beneish values
                                     # (valid range is roughly -10 to +5)
                                     beneish_val = b_res["score"]
-                                    if not (-20 < beneish_val < 10):
-                                        continue
+                                    # Filter anomalous Beneish values (valid range -20 to +10)
+                                    # If anomalous, still include the year but mark Beneish as None
+                                    beneish_valid = (-20 < beneish_val < 10)
 
                                     hist_records.append({
                                         "Year":                    yr,
-                                        "Beneish M-Score":         beneish_val,
+                                        "Beneish M-Score":         round(beneish_val, 4) if beneish_valid else None,
                                         "Bankruptcy Prob (%)":     round(lr_res["score"] * 100, 1),
                                         "XGBoost Distress Prob":   round(xg_res["score"] * 100, 1),
-                                        "Beneish Zone":            b_res["zone"],
+                                        "Beneish Zone":            b_res["zone"] if beneish_valid else "N/A",
                                         "Bankruptcy Zone":         lr_res["zone"],
                                         "Distress Zone":           xg_res["zone"],
                                     })
@@ -715,26 +716,31 @@ def main():
                                 # ── Chart 1: Beneish M-Score ──────────────────
                                 fig_b = go.Figure()
 
+                                # Filter out None values for Beneish chart only
+                                beneish_years  = [r["Year"] for r in hist_records if r["Beneish M-Score"] is not None]
+                                beneish_vals   = [r["Beneish M-Score"] for r in hist_records if r["Beneish M-Score"] is not None]
+                                beneish_zones  = [r["Beneish Zone"] for r in hist_records if r["Beneish M-Score"] is not None]
+
                                 # Colour each point by zone
                                 point_colors = [
                                     "#22c55e" if "Unlikely" in z else "#ef4444"
-                                    for z in df_hist["Beneish Zone"]
+                                    for z in beneish_zones
                                 ]
 
                                 fig_b.add_trace(go.Scatter(
-                                    x=years, y=df_hist["Beneish M-Score"].tolist(),
+                                    x=beneish_years, y=beneish_vals,
                                     mode="lines+markers+text",
                                     name="Beneish M-Score",
                                     line=dict(color="#a78bfa", width=2.5),
                                     marker=dict(size=12, color=point_colors,
                                                 line=dict(color="#a78bfa", width=2)),
-                                    text=[f"{v:.2f}" for v in df_hist["Beneish M-Score"]],
+                                    text=[f"{v:.2f}" for v in beneish_vals],
                                     textposition="top center",
                                     textfont=dict(size=11),
                                 ))
 
                                 # Danger zone shading above -1.78
-                                y_max = max(df_hist["Beneish M-Score"].max() + 0.3, -1.5)
+                                y_max = max(max(beneish_vals) + 0.3, -1.5) if beneish_vals else -1.5
                                 fig_b.add_hrect(
                                     y0=-1.78, y1=y_max,
                                     fillcolor="#ef4444", opacity=0.08,
@@ -756,7 +762,7 @@ def main():
                                     margin=dict(t=60, b=40, l=60, r=20),
                                     yaxis=dict(title="M-Score (higher = more risk)",
                                                gridcolor="#334155"),
-                                    xaxis=dict(tickmode="array", tickvals=years,
+                                    xaxis=dict(tickmode="array", tickvals=beneish_years,
                                                gridcolor="#334155"),
                                     showlegend=False,
                                     plot_bgcolor="#0f172a",
@@ -767,33 +773,38 @@ def main():
                                 # ── Chart 2: Bankruptcy & Distress Probabilities ──
                                 fig_p = go.Figure()
 
-                                # Bankruptcy probability
+                                # Bankruptcy probability — points always amber (line color)
+                                # border ring changes to red/green to signal zone
                                 fig_p.add_trace(go.Scatter(
                                     x=years, y=df_hist["Bankruptcy Prob (%)"].tolist(),
                                     mode="lines+markers+text",
                                     name="Bankruptcy Probability",
                                     line=dict(color="#f59e0b", width=2.5),
                                     marker=dict(size=12,
-                                                color=["#22c55e" if v < 10 else
-                                                       "#f59e0b" if v < 40 else "#ef4444"
-                                                       for v in df_hist["Bankruptcy Prob (%)"]],
-                                                line=dict(color="#f59e0b", width=2)),
+                                                color="#f59e0b",
+                                                line=dict(
+                                                    color=["#22c55e" if v < 10 else
+                                                           "#f59e0b" if v < 40 else "#ef4444"
+                                                           for v in df_hist["Bankruptcy Prob (%)"]],
+                                                    width=3)),
                                     text=[f"{v:.1f}%" for v in df_hist["Bankruptcy Prob (%)"]],
                                     textposition="top center",
                                     textfont=dict(size=11),
                                 ))
 
-                                # XGBoost distress probability
+                                # XGBoost distress probability — points always blue (line color)
                                 fig_p.add_trace(go.Scatter(
                                     x=years, y=df_hist["XGBoost Distress Prob"].tolist(),
                                     mode="lines+markers+text",
                                     name="XGBoost Distress Score",
                                     line=dict(color="#60a5fa", width=2.5),
                                     marker=dict(size=12,
-                                                color=["#22c55e" if v < 40 else
-                                                       "#f59e0b" if v < 60 else "#ef4444"
-                                                       for v in df_hist["XGBoost Distress Prob"]],
-                                                line=dict(color="#60a5fa", width=2)),
+                                                color="#60a5fa",
+                                                line=dict(
+                                                    color=["#22c55e" if v < 40 else
+                                                           "#f59e0b" if v < 60 else "#ef4444"
+                                                           for v in df_hist["XGBoost Distress Prob"]],
+                                                    width=3)),
                                     text=[f"{v:.1f}%" for v in df_hist["XGBoost Distress Prob"]],
                                     textposition="bottom center",
                                     textfont=dict(size=11),
@@ -842,11 +853,11 @@ def main():
 
                                 def _color_zone_hist(val):
                                     v = str(val).lower()
-                                    if "safe" in v or "unlikely" in v or "low" in v:
+                                    if "safe" in v or "unlikely" in v or "low risk" in v:
                                         return "background-color: #14532d; color: white"
                                     elif "grey" in v or "moderate" in v or "monitor" in v:
                                         return "background-color: #713f12; color: white"
-                                    elif "manipulator" in v and "unlikely" not in v:
+                                    elif "high risk" in v or "distress" in v or ("manipulator" in v and "unlikely" not in v):
                                         return "background-color: #7f1d1d; color: white"
                                     return ""
 
