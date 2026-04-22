@@ -604,11 +604,11 @@ def main():
             # ------------------------------------------------------------------
             if d.get("ticker") and d["ticker"] != "MANUAL":
                 st.markdown("---")
-                st.markdown("### 📈 Historical Score Trends")
-                st.caption("Evolution of key risk scores over the last 4 available fiscal years. "
-                           "Helps identify whether risk is improving or deteriorating over time.")
+                with st.expander("📈 Historical Score Trends", expanded=False):
+                    st.caption("Evolution of key risk scores over the last 4 available fiscal years. "
+                               "Helps identify whether risk is improving or deteriorating over time.")
 
-                with st.spinner("Fetching historical data..."):
+                    with st.spinner("Fetching historical data..."):
                     try:
                         import yfinance as yf
                         tkr_hist = yf.Ticker(d["ticker"])
@@ -822,47 +822,73 @@ def main():
                                 # ── Chart 2: Bankruptcy & Distress Probabilities ──
                                 fig_p = go.Figure()
 
-                                # Bankruptcy probability — single amber color throughout
+                                bankr_vals = df_hist["Bankruptcy Prob (%)"].tolist()
+                                xgb_vals   = df_hist["XGBoost Distress Prob"].tolist()
+
+                                # Avoid label overlap: if values within 8 points, force one above one below
+                                bankr_pos = []
+                                xgb_pos   = []
+                                for bv, xv in zip(bankr_vals, xgb_vals):
+                                    if abs(bv - xv) < 8:
+                                        bankr_pos.append("top center")
+                                        xgb_pos.append("bottom center")
+                                    else:
+                                        bankr_pos.append("top center" if bv >= xv else "bottom center")
+                                        xgb_pos.append("bottom center" if bv >= xv else "top center")
+
+                                # Bankruptcy probability — single amber color
                                 fig_p.add_trace(go.Scatter(
-                                    x=years, y=df_hist["Bankruptcy Prob (%)"].tolist(),
+                                    x=years, y=bankr_vals,
                                     mode="lines+markers+text",
                                     name="Bankruptcy Probability",
                                     line=dict(color="#f59e0b", width=2.5),
                                     marker=dict(size=10, color="#f59e0b"),
-                                    text=[f"{v:.1f}%" for v in df_hist["Bankruptcy Prob (%)"]],
-                                    textposition="top center",
+                                    text=[f"{v:.1f}%" for v in bankr_vals],
+                                    textposition=bankr_pos,
                                     textfont=dict(size=11, color="#f59e0b"),
                                 ))
 
-                                # XGBoost distress probability — single blue color throughout
+                                # XGBoost distress probability — single blue color
                                 fig_p.add_trace(go.Scatter(
-                                    x=years, y=df_hist["XGBoost Distress Prob"].tolist(),
+                                    x=years, y=xgb_vals,
                                     mode="lines+markers+text",
                                     name="XGBoost Distress Score",
                                     line=dict(color="#60a5fa", width=2.5),
                                     marker=dict(size=10, color="#60a5fa"),
-                                    text=[f"{v:.1f}%" for v in df_hist["XGBoost Distress Prob"]],
-                                    textposition="bottom center",
+                                    text=[f"{v:.1f}%" for v in xgb_vals],
+                                    textposition=xgb_pos,
                                     textfont=dict(size=11, color="#60a5fa"),
                                 ))
 
-                                # Reference zones
-                                fig_p.add_hrect(y0=0,  y1=10,  fillcolor="#22c55e",
-                                                opacity=0.06, layer="below", line_width=0)
-                                fig_p.add_hrect(y0=10, y1=40,  fillcolor="#f59e0b",
-                                                opacity=0.06, layer="below", line_width=0)
-                                fig_p.add_hrect(y0=40, y1=100, fillcolor="#ef4444",
-                                                opacity=0.06, layer="below", line_width=0)
-                                fig_p.add_hline(y=10,  line_dash="dot",
-                                                line_color="#22c55e", line_width=1, opacity=0.5,
-                                                annotation_text="Low risk threshold (10%)",
-                                                annotation_position="right",
-                                                annotation_font=dict(color="#22c55e", size=10))
-                                fig_p.add_hline(y=40, line_dash="dot",
-                                                line_color="#f59e0b", line_width=1, opacity=0.5,
-                                                annotation_text="High risk threshold (40%)",
-                                                annotation_position="right",
-                                                annotation_font=dict(color="#f59e0b", size=10))
+                                # Sector-specific XGBoost safe threshold (convert to %)
+                                industry = d.get("industry", "Manufacturing")
+                                _XGB_SECTOR_THRESHOLDS = {
+                                    "Healthcare":    0.470974,
+                                    "Technology":    0.499104,
+                                    "Manufacturing": 0.506821,
+                                    "Energy":        0.442242,
+                                    "Construction":  0.370449,
+                                    "Airline":       0.084938,
+                                    "Agriculture":   0.420772,
+                                }
+                                xgb_safe_pct = _XGB_SECTOR_THRESHOLDS.get(industry, 0.506821) * 100
+
+                                # Bankruptcy high risk threshold (40%) — amber
+                                fig_p.add_hline(
+                                    y=40, line_dash="dot",
+                                    line_color="#f59e0b", line_width=1.5, opacity=0.8,
+                                    annotation_text=f"⚠ Bankruptcy high risk (40%)",
+                                    annotation_position="right",
+                                    annotation_font=dict(color="#f59e0b", size=10),
+                                )
+                                # XGBoost sector-specific safe threshold — blue
+                                fig_p.add_hline(
+                                    y=xgb_safe_pct, line_dash="dot",
+                                    line_color="#60a5fa", line_width=1.5, opacity=0.8,
+                                    annotation_text=f"⚠ XGBoost safe limit ({xgb_safe_pct:.1f}% — {industry})",
+                                    annotation_position="right",
+                                    annotation_font=dict(color="#60a5fa", size=10),
+                                )
 
                                 fig_p.update_layout(
                                     title=dict(text="📊 Bankruptcy & Distress Probability Over Time",
