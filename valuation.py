@@ -20,6 +20,27 @@ from typing import Dict, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
+# Compact number formatter
+# ---------------------------------------------------------------------------
+
+def _fmt_compact(v: float) -> str:
+    """Format large numbers compactly: $1.2B, $345M, $12.3K."""
+    if v == 0:
+        return "$0"
+    sign = "-" if v < 0 else ""
+    abs_v = abs(v)
+    if abs_v >= 1e12:
+        return f"{sign}${abs_v/1e12:.2f}T"
+    if abs_v >= 1e9:
+        return f"{sign}${abs_v/1e9:.2f}B"
+    if abs_v >= 1e6:
+        return f"{sign}${abs_v/1e6:.1f}M"
+    if abs_v >= 1e3:
+        return f"{sign}${abs_v/1e3:.1f}K"
+    return f"{sign}${abs_v:,.0f}"
+
+
+# ---------------------------------------------------------------------------
 # Growth rate estimation from historical data
 # ---------------------------------------------------------------------------
 
@@ -249,8 +270,8 @@ def intrinsic_value(data: dict, beta: float,
             projected_fcf.append({
                 "Year": yr,
                 "Growth": f"{yr_growth:.1%}",
-                "FCF": f"${cf:,.0f}",
-                "PV": f"${pv:,.0f}",
+                "FCF": _fmt_compact(cf),
+                "PV": _fmt_compact(pv),
                 "fcf_raw": cf,  # internal — stripped later
             })
         # Terminal value
@@ -261,8 +282,8 @@ def intrinsic_value(data: dict, beta: float,
         projected_fcf.append({
             "Year": "Terminal",
             "Growth": f"{terminal_growth:.1%}",
-            "FCF": f"${terminal_cf:,.0f}",
-            "PV": f"${tv_pv:,.0f}",
+            "FCF": _fmt_compact(terminal_cf),
+            "PV": _fmt_compact(tv_pv),
             "fcf_raw": terminal_cf,
         })
     dcf_per_share = dcf_value / shares if shares > 0 else 0
@@ -275,7 +296,9 @@ def intrinsic_value(data: dict, beta: float,
     # Method 2: Ben Graham formula
     # ============================================================
     # V = EPS * (8.5 + 2g) * 4.4 / Y
-    g_pct = growth_rate * 100
+    # Graham designed this formula for growth rates of 5-15%.
+    # Cap at 15% to avoid distortion from high-growth inputs.
+    g_pct = min(growth_rate * 100, 15.0)
     y_rate = max(risk_free * 100, 1.0)
     graham_value = eps * (8.5 + 2 * g_pct) * 4.4 / y_rate if eps > 0 else 0
 
