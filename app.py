@@ -1382,6 +1382,40 @@ def main():
                                          margin=dict(t=50, b=30))
                     st.plotly_chart(fig_lm, use_container_width=True)
 
+                    # --- Top 5 words per category ---
+                    st.markdown("#### Top 5 Most Frequent Words by Category")
+                    st.caption("The most repeated words from each L&M dictionary category found in the filing.")
+                    top5_cols = st.columns(len(LM_CATEGORY_NAMES))
+                    cat_colors = {
+                        "Negative":     "#ef4444",
+                        "Positive":     "#22c55e",
+                        "Uncertainty":  "#f59e0b",
+                        "Litigious":    "#a78bfa",
+                        "Constraining": "#60a5fa",
+                        "Strong Modal": "#f472b6",
+                    }
+                    for j, cat_name in enumerate(LM_CATEGORY_NAMES):
+                        top5_key = f"{cat_name.lower()}_top5"
+                        top5 = lm_features.get(top5_key, [])
+                        color = cat_colors.get(cat_name, "#94a3b8")
+                        with top5_cols[j]:
+                            st.markdown(f"<p style='color:{color};font-weight:700;"
+                                        f"font-size:0.85rem;margin-bottom:4px'>{cat_name}</p>",
+                                        unsafe_allow_html=True)
+                            if top5:
+                                for word, freq in top5:
+                                    st.markdown(
+                                        f"<div style='display:flex;justify-content:space-between;"
+                                        f"padding:2px 6px;margin:2px 0;background:#1e293b;"
+                                        f"border-radius:4px;font-size:0.82rem'>"
+                                        f"<span style='color:#e2e8f0'>{word}</span>"
+                                        f"<span style='color:{color};font-weight:600'>{freq}x</span>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.caption("No words found")
+
                     st.caption(f"Total words analysed: {lm_features.get('total_words', 0):,} | "
                                f"Net Sentiment (Pos-Neg): {lm_features.get('net_sentiment', 0):.4f}")
 
