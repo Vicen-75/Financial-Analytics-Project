@@ -686,49 +686,129 @@ def main():
 
                             if hist_records:
                                 df_hist = pd.DataFrame(hist_records).sort_values("Year")
+                                years   = df_hist["Year"].tolist()
 
-                                # Line chart
-                                fig_hist = go.Figure()
-                                fig_hist.add_trace(go.Scatter(
-                                    x=df_hist["Year"], y=df_hist["Beneish M-Score"],
-                                    name="Beneish M-Score", mode="lines+markers",
-                                    line=dict(color="#a78bfa", width=2),
-                                    marker=dict(size=8),
-                                ))
-                                fig_hist.add_trace(go.Scatter(
-                                    x=df_hist["Year"], y=df_hist["Bankruptcy Prob (%)"],
-                                    name="Bankruptcy Prob (%)", mode="lines+markers",
-                                    line=dict(color="#f59e0b", width=2),
-                                    marker=dict(size=8),
-                                    yaxis="y2",
-                                ))
-                                fig_hist.add_trace(go.Scatter(
-                                    x=df_hist["Year"], y=df_hist["XGBoost Distress Prob"],
-                                    name="XGBoost Distress Prob (%)", mode="lines+markers",
-                                    line=dict(color="#60a5fa", width=2),
-                                    marker=dict(size=8),
-                                    yaxis="y2",
-                                ))
-                                # Reference line for Beneish threshold
-                                fig_hist.add_hline(y=-1.78, line_dash="dash",
-                                                   line_color="#ef4444", opacity=0.6,
-                                                   annotation_text="Beneish threshold (-1.78)",
-                                                   annotation_position="bottom right")
+                                # ── Chart 1: Beneish M-Score ──────────────────
+                                fig_b = go.Figure()
 
-                                fig_hist.update_layout(
-                                    title=f"Risk Score Trends — {name}",
+                                # Colour each point by zone
+                                point_colors = [
+                                    "#22c55e" if "Unlikely" in z else "#ef4444"
+                                    for z in df_hist["Beneish Zone"]
+                                ]
+
+                                fig_b.add_trace(go.Scatter(
+                                    x=years, y=df_hist["Beneish M-Score"].tolist(),
+                                    mode="lines+markers+text",
+                                    name="Beneish M-Score",
+                                    line=dict(color="#a78bfa", width=2.5),
+                                    marker=dict(size=12, color=point_colors,
+                                                line=dict(color="#a78bfa", width=2)),
+                                    text=[f"{v:.2f}" for v in df_hist["Beneish M-Score"]],
+                                    textposition="top center",
+                                    textfont=dict(size=11),
+                                ))
+
+                                # Danger zone shading above -1.78
+                                y_max = max(df_hist["Beneish M-Score"].max() + 0.3, -1.5)
+                                fig_b.add_hrect(
+                                    y0=-1.78, y1=y_max,
+                                    fillcolor="#ef4444", opacity=0.08,
+                                    layer="below", line_width=0,
+                                )
+                                fig_b.add_hline(
+                                    y=-1.78, line_dash="dash",
+                                    line_color="#ef4444", line_width=1.5,
+                                    annotation_text="⚠️ Manipulation threshold (-1.78)",
+                                    annotation_position="top right",
+                                    annotation_font=dict(color="#ef4444", size=11),
+                                )
+
+                                fig_b.update_layout(
+                                    title=dict(text="📊 Beneish M-Score — Manipulation Risk Over Time",
+                                               font=dict(size=15)),
                                     template="plotly_dark",
-                                    height=400,
-                                    margin=dict(t=60, b=40),
-                                    yaxis=dict(title="Beneish M-Score", side="left"),
-                                    yaxis2=dict(title="Probability (%)", overlaying="y",
-                                                side="right", range=[0, 100]),
+                                    height=320,
+                                    margin=dict(t=60, b=40, l=60, r=20),
+                                    yaxis=dict(title="M-Score (higher = more risk)",
+                                               gridcolor="#334155"),
+                                    xaxis=dict(tickmode="array", tickvals=years,
+                                               gridcolor="#334155"),
+                                    showlegend=False,
+                                    plot_bgcolor="#0f172a",
+                                )
+                                st.plotly_chart(fig_b, use_container_width=True,
+                                                key=f"hist_beneish_{d.get('ticker','')}")
+
+                                # ── Chart 2: Bankruptcy & Distress Probabilities ──
+                                fig_p = go.Figure()
+
+                                # Bankruptcy probability
+                                fig_p.add_trace(go.Scatter(
+                                    x=years, y=df_hist["Bankruptcy Prob (%)"].tolist(),
+                                    mode="lines+markers+text",
+                                    name="Bankruptcy Probability",
+                                    line=dict(color="#f59e0b", width=2.5),
+                                    marker=dict(size=12,
+                                                color=["#22c55e" if v < 10 else
+                                                       "#f59e0b" if v < 40 else "#ef4444"
+                                                       for v in df_hist["Bankruptcy Prob (%)"]],
+                                                line=dict(color="#f59e0b", width=2)),
+                                    text=[f"{v:.1f}%" for v in df_hist["Bankruptcy Prob (%)"]],
+                                    textposition="top center",
+                                    textfont=dict(size=11),
+                                ))
+
+                                # XGBoost distress probability
+                                fig_p.add_trace(go.Scatter(
+                                    x=years, y=df_hist["XGBoost Distress Prob"].tolist(),
+                                    mode="lines+markers+text",
+                                    name="XGBoost Distress Score",
+                                    line=dict(color="#60a5fa", width=2.5),
+                                    marker=dict(size=12,
+                                                color=["#22c55e" if v < 40 else
+                                                       "#f59e0b" if v < 60 else "#ef4444"
+                                                       for v in df_hist["XGBoost Distress Prob"]],
+                                                line=dict(color="#60a5fa", width=2)),
+                                    text=[f"{v:.1f}%" for v in df_hist["XGBoost Distress Prob"]],
+                                    textposition="bottom center",
+                                    textfont=dict(size=11),
+                                ))
+
+                                # Reference zones
+                                fig_p.add_hrect(y0=0,  y1=10,  fillcolor="#22c55e",
+                                                opacity=0.06, layer="below", line_width=0)
+                                fig_p.add_hrect(y0=10, y1=40,  fillcolor="#f59e0b",
+                                                opacity=0.06, layer="below", line_width=0)
+                                fig_p.add_hrect(y0=40, y1=100, fillcolor="#ef4444",
+                                                opacity=0.06, layer="below", line_width=0)
+                                fig_p.add_hline(y=10,  line_dash="dot",
+                                                line_color="#22c55e", line_width=1, opacity=0.5,
+                                                annotation_text="Low risk threshold (10%)",
+                                                annotation_position="right",
+                                                annotation_font=dict(color="#22c55e", size=10))
+                                fig_p.add_hline(y=40, line_dash="dot",
+                                                line_color="#f59e0b", line_width=1, opacity=0.5,
+                                                annotation_text="High risk threshold (40%)",
+                                                annotation_position="right",
+                                                annotation_font=dict(color="#f59e0b", size=10))
+
+                                fig_p.update_layout(
+                                    title=dict(text="📊 Bankruptcy & Distress Probability Over Time",
+                                               font=dict(size=15)),
+                                    template="plotly_dark",
+                                    height=350,
+                                    margin=dict(t=60, b=40, l=60, r=100),
+                                    yaxis=dict(title="Probability (%)", range=[0, 100],
+                                               gridcolor="#334155"),
+                                    xaxis=dict(tickmode="array", tickvals=years,
+                                               gridcolor="#334155"),
                                     legend=dict(orientation="h", yanchor="bottom",
                                                 y=1.02, xanchor="right", x=1),
-                                    xaxis=dict(tickmode="array", tickvals=df_hist["Year"].tolist()),
+                                    plot_bgcolor="#0f172a",
                                 )
-                                st.plotly_chart(fig_hist, use_container_width=True,
-                                                key=f"hist_trend_{d.get('ticker','')}")
+                                st.plotly_chart(fig_p, use_container_width=True,
+                                                key=f"hist_prob_{d.get('ticker','')}")
 
                                 # Summary table
                                 display_df = df_hist[["Year", "Beneish M-Score",
