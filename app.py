@@ -605,6 +605,7 @@ def main():
             if d.get("ticker") and d["ticker"] != "MANUAL":
                 st.markdown("---")
                 with st.expander("Historical Score Trends", expanded=False):
+                    st.markdown("### **Historical Score Trends**")
                     st.caption("Evolution of key risk scores over the last 4 available fiscal years. "
                                "Helps identify whether risk is improving or deteriorating over time.")
 
