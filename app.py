@@ -307,6 +307,29 @@ def data_input_panel(key_prefix: str = "") -> dict | list[dict] | None:
                 }
                 st.json(preview)
 
+                # Download as CSV button — exports exact data dict in CSV upload format
+                import csv, io
+                csv_cols = [
+                    "ticker","company_name","industry","year",
+                    "total_assets","current_assets","current_liabilities","total_liabilities",
+                    "long_term_debt","total_debt","retained_earnings","total_equity",
+                    "cash_and_equivalents","revenue","gross_profit","ebit","net_income",
+                    "interest_expense","depreciation","sga_expense","operating_cash_flow",
+                    "market_cap","shares_outstanding","stock_price","revenue_prev",
+                    "net_ppe","receivables",
+                ]
+                buf = io.StringIO()
+                writer = csv.DictWriter(buf, fieldnames=csv_cols, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerow({k: data.get(k, "") for k in csv_cols})
+                st.download_button(
+                    label="⬇ Download as CSV",
+                    data=buf.getvalue(),
+                    file_name=f"{data.get('ticker','company')}_{data.get('year','')}.csv",
+                    mime="text/csv",
+                    key=f"{key_prefix}_download_csv",
+                )
+
             return data
         return None
 
